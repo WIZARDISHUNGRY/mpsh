@@ -1,0 +1,26 @@
+BUILDING AND INSTALLING MPSH
+
+
+Building mpsh
+
+	1. Edit the Makefile to specify your operating system, and compiler.
+
+	2. type: make
+
+	Dependencies are:
+
+		readline
+		curses
+
+
+Installing mpsh
+
+	1. Copy the file "mpsh" somewhere convenient. /usr/local/bin, 
+		for example.
+
+	2. Copy startup files to your home directory:
+
+		cp mpshrc_all $HOME/.mpshrc_all
+		cp mpshrc_login $HOME/.mpshrc_login
+
+

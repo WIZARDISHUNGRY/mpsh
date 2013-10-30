@@ -1,0 +1,12 @@
+# mpsh login script
+
+
+setenv PATH=/bin:/usr/bin:/usr/local/bin:
+setenv mpsh-umask 022
+
+
+echo Welcome to (hostname)
+echo
+cat /etc/motd
+echo
+

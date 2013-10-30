@@ -1,0 +1,46 @@
+Summery of mpsh command options:
+
+File redirect:
+
+	command [args] >[eba] file
+
+	(e = stderr, b = both (stderr & stdout), a = append)
+
+Command sequence:
+
+	command1 [args] ; command2 [args]
+
+Simple pipeline:
+
+	command1 [args] |[eb] command2 [args] |[eb] etc...
+
+Conditional sequence:
+
+	command1 [args] ;[?!] command2 [args]
+
+Set theory operators:
+
+	command1 [args] |[U^\-o] command2 [args]
+
+Set theory conditionals:
+
+	command1 [args] |[<=>] command2 [args] ; command3 [args]
+
+Background job:
+
+	command [args] &
+
+Low priority background job:
+
+	command [args] &-[-]
+
+Multiprocess background job:
+
+	command [args] &[n*]
+
+Hand off job to job handler, where X specifies the handler:
+
+	command [args] &[X] [handler args]
+
+	(Job handlers can be combined with multiprocess options.)
+
