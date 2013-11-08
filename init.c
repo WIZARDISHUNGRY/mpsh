@@ -49,6 +49,9 @@ init.c:
 
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
 #include <signal.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -57,13 +60,9 @@ init.c:
 
 
 #ifdef LINUX
-#include <stdlib.h>
-#include <string.h>
 #endif
 
 #ifdef BSD
-#include <stdlib.h>
-#include <string.h>
 #endif
 
 #include "mpsh.h"
@@ -82,9 +81,7 @@ char *env[];
 	int ret;
 	int i;
 
-	/*
-	control_term = fileno(stdin);
-	*/
+
 	control_term = open("/dev/tty",O_RDONLY,0x00);
 
 	if(control_term == -1)

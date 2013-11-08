@@ -48,15 +48,14 @@ set-theory.c:
 #include <stdlib.h>
 #include <stdio.h>
 #include <fcntl.h>
+#include <string.h>
 #include <strings.h>
 
 
 #ifdef LINUX
-#include <string.h>
 #endif
 
 #ifdef BSD
-#include <string.h>
 #endif
 
 #include "mpsh.h"
@@ -79,6 +78,7 @@ set-theory.c:
 	|o - symmetric difference (elements in only one of A or B)
 	|< - conditional, A is a subset of B?
 	|> - conditional, B is a subset of A?
+	|= - conditional, A equals B?
 
 */
 

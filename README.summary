@@ -34,13 +34,25 @@ Low priority background job:
 
 	command [args] &-[-]
 
-Multiprocess background job:
+Multiprocess background job - split arguments:
 
 	command [args] &[n*]
+
+Multiprocess background job - symmetric:
+
+	command [args] &[n*]!
 
 Hand off job to job handler, where X specifies the handler:
 
 	command [args] &[X] [handler args]
 
 	(Job handlers can be combined with multiprocess options.)
+
+Command output substitution:
+
+	(command [args])
+
+Command grouping:
+
+	[ command [args] ]
 

@@ -45,15 +45,14 @@ fns.c:
 
 
 #include <stdio.h>
-
-#ifdef LINUX
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
+
+#ifdef LINUX
 #endif
 
 #ifdef BSD
-#include <stdlib.h>
-#include <string.h>
 #endif
 
 

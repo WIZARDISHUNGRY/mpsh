@@ -1,7 +1,6 @@
-
 							 Introduction
 
-INTRODUCTION TO MPSH (Version 1.0, 2013-10-29)
+INTRODUCTION TO MPSH (Version 1.1, 2013-11-08)
 
 mpsh is an experimental command interpreter for Unix systems written
 by Dave Fischer at the Center for Computational Aesthetics
@@ -151,26 +150,53 @@ and once it's accomplished, it is not listed as a running job.
 
 						   Multiprocess Jobs
 
-Multiprocess Jobs - split up a command with many arguments into [n]
-separate jobs, each with 1/n of the argument list.
+Multiprocess Jobs - split up a command into multiple parallel
+instances.
 
-Split argument list into four separate processes:
+In the basic form, this lets you split up a command with many
+arguments into [n] separate jobs, each with 1/n of the argument list.
 
-	mpsh$ gen-thumbnails *.jpg &4
+So, this command:
 
-Split into a separate process per file:
+	mpsh$ command arg1 arg2 arg3 arg4 &2
+
+will execute two seperate processes:
+
+	command arg1 arg3
+	command arg2 arg4
+
+Execute a separate process per jpg file:
 
 	mpsh$ gen-thumbnails *.jpg &*
 
-Split into a separate process per file, and submit each to a batch
-queue:
+Execute a separate process per file, and submit each to a batch queue:
 
 	mpsh$ gen-thumbnails *.jpg &q*
 
-In the first two examples, the jobs display will show how many
-processes the job was split into, and how many are still running.
+In the "symmetric" form "&n!", you can generate parallel instances
+regardless of the argument list, with the entire argument list
+duplicated for each process:
+
+	mpsh$ command arg1 arg2 arg3 arg4 &2!
+
+will execute two processes, each with the full arguments:
+
+	command arg1 arg2 arg3 arg4
+	command arg1 arg2 arg3 arg4
+
+("&*!" will still determine the number of instances to execute based
+on the argument list, but each instance will get all of the
+arguments.)
+
+When executing multiprocess jobs, the "jobs" command will show how
+many processes the job was split into, and how many are still running.
 Also, job PID substitution ("kill -9 %gen") will include the PIDs for
-all still running processes.
+all processes that are still running.
+
+If you want to use a multiprocess job in a pipeline, you have to use
+command grouping:
+
+	mpsh$ command | [ command arg &n ] | command
 
 						 Environment Variables
 
@@ -225,6 +251,12 @@ The internal settings are:
 	mpsh-history - Show command history substitution?
 	mpsh-cdhistory - Show directory history substitution?
 	mpsh-umask - umask, in octal
+	mpsh-nice - nice value for "&-[-]"
+
+If you set mpsh-nice=5, then "command &-" will run at nice level 5,
+"command &---" at nice level 15, etc. The default mpsh-nice value is
+10.
+
 	mpsh-error-level - error verbosity level 0 - 3
 
 Error messages are formatted:
@@ -309,8 +341,9 @@ You can also execute commands conditionally based on set theory tests:
 	mpsh$ { red } |< { red green blue } ; echo red is a subset of rgb.
 	red is a subset of rgb.
 
-For example, take the intersection of *.c with the union of the
-outputs of command1 and command2, then send that to the sort command:
+Some more examples - take the intersection of *.c with the union of
+the outputs of command1 and command2, then send that to the sort
+command:
 
 	mpsh$ command1 |U command2 |^ { *.c } | sort
 
@@ -369,15 +402,15 @@ history -l shows user & system CPU usage, exit status ("Running", exit
 value, or signal if the process was killed), and command:
 
 	mpsh$ history -l
-	 Num  User   Sys   Exit Command
-	   0 00:00 00:00      - history -c
-	   1 00:00 00:00 SIGINT sleep 10                                
-	   2 00:00 00:04     ok dd bs=1024k count=1024 if=/dev/zero of=/dev/null &
-	   3 00:00 00:00     ok jobs                                    
+	Num  User   Sys   Exit Command
+	0 00:00 00:00      - history -c
+	1 00:00 00:00 SIGINT sleep 10                                
+	2 00:00 00:04     ok dd bs=1024k count=1024 if=/dev/zero of=/dev/null &
+	3 00:00 00:00     ok jobs                                    
 
 history [n] shows more data about completed jobs.
 
-	5:10 e3500 mpsh% history 2
+	mpsh% history 2
 	Entry:       2
 	Started:     Fri Oct 18 17:08:45 2013
 	Ended:       Fri Oct 18 17:08:51 2013
@@ -421,14 +454,84 @@ Clear directory history:
 
 All internal mpsh commands:
 
-	.
-	fg
-	cd
-	exit
-	wait
-	jobs
-	setenv
-	history
+.
+
+Execute script in the current shell:
+
+	mpsh$ . file
+
+cd
+
+Change directory:
+
+	mpsh$ cd
+	mpsh$ cd dir
+	mpsh$ cd !str
+	mpsh$ cd !n
+	mpsh$ cd !
+
+Show directory history:
+
+	mpsh$ cd -s
+
+Clear directory history:
+
+	mpsh$ cd -c
+
+exit
+	mpsh$ exit [n]
+
+fg
+
+Resume a stopped job:
+
+	mpsh$ fg [pid]
+	mpsh$ fg %job
+	mpsh$ fg %-
+
+history
+
+Show history:
+
+	mpsh$ history
+	mpsh$ history -l
+	mpsh$ history n
+
+Clear history:
+
+	mpsh$ history -c
+
+jobs
+
+Show jobs:
+
+	mpsh$ jobs
+
+setenv
+
+Set environment variable:
+
+	mpsh$ setenv name=val
+
+Show environment variables:
+
+	mpsh$ setenv -s
+
+Show environment variable command aliases:
+
+	mpsh$ setenv -c
+
+Show mpsh internal settings:
+
+	mpsh$ setenv -i
+
+Delete environment variable:
+
+	mpsh$ setenv -d [name]
+
+wait
+
+	mpsh$ wait [pid]
 
 								Quoting
 
@@ -461,8 +564,8 @@ Will expand to the first match in the directories listed in $PATH.
 
 Startup files are:
 
-$HOME/.mpshrc_all - read by all mpsh instances
-$HOME/.mpshrc_login - read by mpsh logins
+	$HOME/.mpshrc_all - read by all mpsh instances
+	$HOME/.mpshrc_login - read by mpsh logins
 
 					   Differences From sh/bash
 
@@ -557,11 +660,10 @@ setenv mpsh-prompt="!echo (date '+%l:%M') $HOST 'mpsh% '"
 
 
 setenv PATH=/bin:/usr/bin:/usr/local/bin:
-setenv mpsh-umask 022
+setenv mpsh-umask=022
 
 
 echo Welcome to (hostname)
 echo
 cat /etc/motd
 echo
-

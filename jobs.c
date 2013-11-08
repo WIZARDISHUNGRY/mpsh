@@ -46,6 +46,9 @@ jobs.c:
 
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
 #include <errno.h>
 #include <signal.h>
 #include <unistd.h>
@@ -55,14 +58,10 @@ jobs.c:
 #endif
 
 #ifdef LINUX
-#include <stdlib.h>
-#include <string.h>
 #include <wait.h>
 #endif
 
 #ifdef BSD
-#include <stdlib.h>
-#include <string.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/time.h>
@@ -273,40 +272,36 @@ check_for_job_exit() { /* BSD VERSION */
 
 
 	while((pid = wait4(WAIT_ANY,&st,WUNTRACED|WNOHANG,&ruse)) > 0) {
-		if(pid != 0) {
-			signal(SIGTTIN,SIG_IGN);
-			signal(SIGTTOU,SIG_IGN);
-			tcsetpgrp(control_term,getpgrp());
-			/*
-			*/
-			for(job=0; job<JOB_ENTRIES; job++) {
-				if(jobs[job].pids != 0) {
-					for(i=0; jobs[job].pids[i]; i++) {
-						if(jobs[job].pids[i] == pid) {
-							for(k=i; jobs[job].pids[k]; k++) 
-								jobs[job].pids[k] = jobs[job].pids[k+1];
-							if(jobs[job].pids[0] == 0) {
-								printf("Job %s %s.\n",jobs[job].text,
-									WIFSIGNALED(st) ?
-									"killed" : "exited");
-								add_history_details(jobs[job].history,st,&ruse);
-								delete_job(job);
-							} else
-								add_history_time(jobs[job].history,st,&ruse);
-							goto end;
-						}
-					}
-				} else if(jobs[job].pid == pid) {
-					if(!WIFSTOPPED(st)) {
-						printf("Job %s %s.\n",jobs[job].text,
-							WIFSIGNALED(st) ? "killed" : "exited");
-						add_history_details(jobs[job].history,st,&ruse);
-						delete_job(job);
+		signal(SIGTTIN,SIG_IGN);
+		signal(SIGTTOU,SIG_IGN);
+		if(pid == 0) return(0);
+		for(job=0; job<JOB_ENTRIES; job++) {
+			if(jobs[job].pids != 0) {
+				for(i=0; jobs[job].pids[i]; i++) {
+					if(jobs[job].pids[i] == pid) {
+						for(k=i; jobs[job].pids[k]; k++) 
+							jobs[job].pids[k] = jobs[job].pids[k+1];
+						if(jobs[job].pids[0] == 0) {
+							fprintf(stderr,"Job %s %s.\n",jobs[job].text,
+								WIFSIGNALED(st) ?
+								"killed" : "exited");
+							add_history_details(jobs[job].history,st,&ruse);
+							delete_job(job);
+						} else
+							add_history_time(jobs[job].history,st,&ruse);
 						goto end;
 					}
 				}
+			} else if(jobs[job].pid == pid) {
+				if(!WIFSTOPPED(st)) {
+					fprintf(stderr,"Job %s %s.\n",jobs[job].text,
+						WIFSIGNALED(st) ? "killed" : "exited");
+					add_history_details(jobs[job].history,st,&ruse);
+					delete_job(job);
+					goto end;
+				}
 			}
-		} else return;
+		}
 		end: ;
 	}
 }
@@ -385,39 +380,42 @@ check_for_job_exit() { /* NON-BSD VERSION */
 	int job;
 	int i, k;
 
+
+	infop.si_utime = 0L;
+	infop.si_stime = 0L;
+
 	while(waitid(P_ALL,0,&infop,WEXITED|WNOHANG) == 0) {
+		signal(SIGTTIN,SIG_IGN);
+		signal(SIGTTOU,SIG_IGN);
 		pid = infop.si_pid;
-		if(pid != 0) {
-			signal(SIGTTIN,SIG_IGN);
-			signal(SIGTTOU,SIG_IGN);
-			tcsetpgrp(control_term,getpgrp());
-			for(job=0; job<JOB_ENTRIES; job++) {
-				if(jobs[job].pids != 0) {
-					for(i=0; jobs[job].pids[i]; i++) {
-						if(jobs[job].pids[i] == pid) {
-							for(k=i; jobs[job].pids[k]; k++) 
-								jobs[job].pids[k] = jobs[job].pids[k+1];
-							if(jobs[job].pids[0] == 0) {
-								printf("Job %s %s.\n",jobs[job].text,
-									infop.si_code == CLD_KILLED ||
-									infop.si_code == CLD_DUMPED ?
-									"killed" : "exited");
-								add_history_details(jobs[job].history,&infop);
-								delete_job(job);
-							} else
-								add_history_time(jobs[job].history,&infop);
-							goto end;
-						}
+		if(pid == 0) return(0);
+		for(job=0; job<JOB_ENTRIES; job++) {
+			if(jobs[job].pids != 0) {
+				for(i=0; jobs[job].pids[i]; i++) {
+					if(jobs[job].pids[i] == pid) {
+						for(k=i; jobs[job].pids[k]; k++) 
+							jobs[job].pids[k] = jobs[job].pids[k+1];
+						if(jobs[job].pids[0] == 0) {
+							fprintf(stderr,"Job %s %s.\n",jobs[job].text,
+								infop.si_code == CLD_KILLED ||
+								infop.si_code == CLD_DUMPED ?
+								"killed" : "exited");
+							add_history_details(jobs[job].history,&infop);
+							delete_job(job);
+						} else
+							add_history_time(jobs[job].history,&infop);
+						goto end;
 					}
-				} else if(jobs[job].pid == pid) {
-					printf("Job %s %s.\n",jobs[job].text,
-						infop.si_code == CLD_KILLED ||
-						infop.si_code == CLD_DUMPED ? "killed" : "exited");
-					add_history_details(jobs[job].history,&infop);
-					delete_job(job);
 				}
+			} else if(jobs[job].pid == pid) {
+				fprintf(stderr,"Job %s %s.\n",jobs[job].text,
+					infop.si_code == CLD_KILLED ||
+					infop.si_code == CLD_DUMPED ? "killed" : "exited");
+				add_history_details(jobs[job].history,&infop);
+				delete_job(job);
+				goto end;
 			}
-		} else return;
+		}
 		end: ;
 	}
 }

@@ -46,16 +46,14 @@ parse.c:
 
 
 #include <stdio.h>
-#include <string.h>
-
-#ifdef LINUX
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
+
+#ifdef LINUX
 #endif
 
 #ifdef BSD
-#include <stdlib.h>
-#include <string.h>
 #endif
 
 
@@ -78,6 +76,7 @@ int ch;
 	struct command *next_command;
 	struct word_list *handler_args;
 
+	command->ch = ch;
 
 	switch(command->state) {
 
@@ -129,8 +128,9 @@ int ch;
 			}
 
 			if(ch == ')') {
-				if(command->quote_stack[command->quote_depth] != QUOTE_PAREN) {
-					report_error("Unmatched parenthesis",NULL,0,0);
+				if(command->quote_depth < 1 ||
+					command->quote_stack[command->quote_depth] != QUOTE_PAREN) {
+					report_mismatched_something(command);
 					return(NULL);
 				}
 				command->quote_depth--;
@@ -151,8 +151,9 @@ int ch;
 			}
 
 			if(ch == ']') {
-				if(command->quote_stack[command->quote_depth] != QUOTE_SQUARE) {
-					report_error("Unmatched square brackets",NULL,0,0);
+				if(command->quote_depth < 1 ||
+				command->quote_stack[command->quote_depth] != QUOTE_SQUARE) {
+					report_mismatched_something(command);
 					return(NULL);
 				}
 				command->quote_depth--;
@@ -161,7 +162,7 @@ int ch;
 
 			if(ch == '\n') {
 				if(command->quote_depth > 0) {
-					report_error("Unmatched quotes",NULL,0,0);
+					report_mismatched_something(command);
 					return(NULL);
 				}
 				command->state = STATE_DONE;
@@ -423,7 +424,7 @@ int ch;
 
 			if(ch == '-') {
 				command->flags |= FLAG_NICE;
-				command->nice += 10;
+				command->nice += atoi(get_env("mpsh-nice"));
 				return(command);
 			}
 
@@ -432,10 +433,14 @@ int ch;
 				command->smp_num = 0;
 				return(command);
 			}
+			if(ch == '!') {
+				command->flags |= FLAG_SMP_SYM;
+				return(command);
+			}
 			if(isdigit(ch)) {
 				command->flags |= FLAG_SMP;
-				command->smp_num = ch - '0';
-				command->state = STATE_BACK_NUM;
+				command->smp_num *= 10;
+				command->smp_num += ch - '0';
 				return(command);
 			}
 			if(isalpha(ch)) {
@@ -455,23 +460,14 @@ int ch;
 			report_error("Unknown background option",NULL,ch,0);
 			return(NULL);
 
-		case STATE_BACK_NUM :
-			if(ch == '\n') {
-				command->state = STATE_DONE;
-				return(command);
-			}
-			if(isdigit(ch)) {
-				command->smp_num *= 10;
-				command->smp_num += ch - '0';
-				return(command);
-			} else {
-				command->state = STATE_BACK_POST;
-				return(command);
-			}
 		case STATE_BACK_POST : /* After "& ", looking for handler args */
 			if(ch == '\n') {
 				command->state = STATE_DONE;
 				return(command);
+			}
+			if(ch == '|') {
+				report_error("Cannot pipe from a background job. Use command grouping.",command->text,0,0);
+				return(NULL);
 			}
 			if(ch == ';') {
 				command->state = STATE_SEQ;
@@ -508,6 +504,40 @@ int ch;
 expand_mp(command)
 struct command *command;
 {
+	struct command *previous;
+
+	previous = NULL;
+
+	while(command) {
+		if(command->flags & FLAG_SMP) { 
+			/* Break this command into multiple */
+			if(command->smp_num < 0 ||
+					command->smp_num == 1) { /* Nope. */
+				command->flags ^= FLAG_SMP;
+				command->smp_num = 0;
+				report_error("Multiprocess value must be 2 or higher",
+					command->text,0,0);
+				return(0);
+				continue;
+			}
+			if(previous && (previous->flags & FLAG_PIPE)) {
+				report_error("Use command grouping",command->text,0,0);
+				return(0);
+			}
+			if(command->flags & FLAG_SMP_SYM)
+				expand_mp_symmetric(command);
+			else
+				expand_mp_arguments(command);
+		}
+		previous = command;
+		command = command->pipeline;
+	}
+	return(1);
+}
+
+expand_mp_symmetric(command)
+struct command *command;
+{
 	int i, jobs;
 	int cnt;
 	int flags;
@@ -517,89 +547,147 @@ struct command *command;
 	struct word_list *first_args, *original_args;
 	int handler;
 	int smp_id;
+	int nice_val;
 
-	while(command) {
-		if(command->flags & FLAG_SMP && 
-			command->words && command->words->next) { 
-			/* Break this command into multiple */
-			command->smp_id = smp_id = unique_smp_id++;
-			first_args = w_start = command->words;
-			command->words = NULL;
-			if(w_start->next->word[0] == '-') { /* Two args */
-				w_start = w_start->next->next;
-				first_args->next->next = NULL;
-			} else { /* One arg */
-				w_start = w_start->next;
-				first_args->next = NULL;
-			}
-			cnt = 0;
-			w = w_start;
-			while(w) {
-				w = w->next;
-				cnt++;
-			}
-			jobs = command->smp_num;
-			if(jobs == 0) {
-				jobs = cnt;
-				command->smp_num = cnt;
-			}
-			if(cnt < jobs) jobs = cnt;
+	command->smp_id = smp_id = unique_smp_id++;
+	first_args = command->words;
 
-			/* Save stuff from original command struct */
-			flags = command->flags ^ FLAG_SMP;
-			handler = command->job_handler;
-			original_args = command->words;
-			next_command = command->pipeline;
+	jobs = command->smp_num;
 
-			w = w_start;
-
-			command->flags = flags;
-			add_word(command,first_args);
-			if(first_args->next) add_word(command,first_args->next);
-			add_word(command,w);
-			w = w->next;
-
-			/* Start point of repeated loop. */
-			start_command = command;
-
-			/* Create jobs-1 new command structs */
-			/* we're reusing the old struct, so -1 */
-			for(i=1; i<jobs; i++) {
-				command->pipeline = init_command();
-				command->pipeline->text = command->text;
-				command = command->pipeline;
-				command->flags = flags;
-				command->job_handler = handler;
-				command->smp_id = smp_id;
-				add_word(command,first_args);
-				if(first_args->next) add_word(command,first_args->next);
-				add_word(command,w);
-				copy_word_list(start_command->handler_args,
-					&command->handler_args);
-				w = w->next;
-
-				/* copy redirect filenames */
-				copy_word_list(start_command->stdout_filename,
-					&command->stdout_filename);
-				copy_word_list(start_command->stderr_filename,
-					&command->stderr_filename);
-			}
-
-			last_command = command;
-
-			cmd = start_command;
-			while(i < cnt) {
-				add_word(cmd,w);
-				w = w->next;
-				cmd = cmd->pipeline;
-				if(cmd == NULL) cmd = start_command;
-				i++;
-			}
-			command = last_command;
-			last_command->pipeline = next_command;
-		}
-		command = command->pipeline;
+	if(jobs == 0) {
+		for(w = command->words; w->next; w=w->next) jobs++;
+		command->smp_num = jobs;
 	}
+
+	/* Save stuff from original command struct */
+	flags = command->flags ^ FLAG_SMP ^ FLAG_SMP_SYM;
+	command->flags = flags;
+	handler = command->job_handler;
+	original_args = command->words;
+	next_command = command->pipeline;
+	nice_val = command->nice;
+
+	/* Start point of repeated loop. */
+	start_command = command;
+
+	/* Create jobs-1 new command structs */
+	/* we're reusing the old struct, so -1 */
+	for(i=1; i<jobs; i++) {
+		command->pipeline = init_command();
+		command->pipeline->text = command->text;
+		command = command->pipeline;
+		command->flags = flags;
+		command->job_handler = handler;
+		command->smp_id = smp_id;
+		command->nice = nice_val;
+
+		/* Copy arguments */
+		copy_word_list(first_args,&command->words);
+		copy_word_list(start_command->handler_args,&command->handler_args);
+
+		/* copy redirect filenames */
+		copy_word_list(start_command->stdout_filename,
+			&command->stdout_filename);
+		copy_word_list(start_command->stderr_filename,
+			&command->stderr_filename);
+	}
+
+	last_command = command;
+
+	last_command->pipeline = next_command;
+}
+
+expand_mp_arguments(command)
+struct command *command;
+{
+	int i, jobs;
+	int cnt;
+	int flags;
+	struct command *next_command, *start_command, *cmd;
+	struct command *last_command;
+	struct word_list *w_start, *w;
+	struct word_list *first_args, *original_args;
+	int handler;
+	int smp_id;
+	int nice_val;
+
+	command->smp_id = smp_id = unique_smp_id++;
+	first_args = w_start = command->words;
+	command->words = NULL;
+	if(w_start->next->word[0] == '-') { /* Two args */
+		w_start = w_start->next->next;
+		first_args->next->next = NULL;
+	} else { /* One arg */
+		w_start = w_start->next;
+		first_args->next = NULL;
+	}
+	cnt = 0;
+	w = w_start;
+	while(w) {
+		w = w->next;
+		cnt++;
+	}
+	jobs = command->smp_num;
+	if(jobs == 0) {
+		jobs = cnt;
+		command->smp_num = cnt;
+	}
+	if(cnt < jobs) jobs = cnt;
+
+	/* Save stuff from original command struct */
+	flags = command->flags ^ FLAG_SMP;
+	handler = command->job_handler;
+	nice_val = command->nice;
+	original_args = command->words;
+	next_command = command->pipeline;
+
+	w = w_start;
+
+	command->flags = flags;
+	add_word(command,first_args);
+	if(first_args->next) add_word(command,first_args->next);
+	add_word(command,w);
+	w = w->next;
+
+	/* Start point of repeated loop. */
+	start_command = command;
+
+	/* Create jobs-1 new command structs */
+	/* we're reusing the old struct, so -1 */
+	for(i=1; i<jobs; i++) {
+		command->pipeline = init_command();
+		command->pipeline->text = command->text;
+		command = command->pipeline;
+		command->flags = flags;
+		command->job_handler = handler;
+		command->smp_id = smp_id;
+		command->nice = nice_val;
+		add_word(command,first_args);
+		if(first_args->next) add_word(command,first_args->next);
+		add_word(command,w);
+		copy_word_list(start_command->handler_args,
+			&command->handler_args);
+		w = w->next;
+
+		/* copy redirect filenames */
+		copy_word_list(start_command->stdout_filename,
+			&command->stdout_filename);
+		copy_word_list(start_command->stderr_filename,
+			&command->stderr_filename);
+	}
+
+	last_command = command;
+
+	cmd = start_command;
+	while(i < cnt) {
+		add_word(cmd,w);
+		w = w->next;
+		cmd = cmd->pipeline;
+		if(cmd == NULL) cmd = start_command;
+		i++;
+	}
+	command = last_command;
+	last_command->pipeline = next_command;
 }
 
 add_command_text_letter(command,ch)
@@ -635,5 +723,4 @@ struct word_list *words;
 
 	return(1);
 }
-			
 

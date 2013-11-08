@@ -49,6 +49,8 @@ main.c:
 
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <signal.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -56,17 +58,12 @@ main.c:
 #include <fcntl.h>
 
 #ifdef IRIX
-#include <stdlib.h>
 #endif
 
 #ifdef LINUX
-#include <stdlib.h>
-#include <string.h>
 #endif
 
 #ifdef BSD
-#include <stdlib.h>
-#include <string.h>
 #endif
 
 
@@ -128,6 +125,7 @@ int interactive;
 	char *pt;
 	struct command *command;
 	struct command *initial_command;
+	int ret;
 
 
 	/* Init parse tree structs */
@@ -159,28 +157,25 @@ int interactive;
 		/*
 		expand_alias(initial_command);
 		*/
-		expand_mp(initial_command);
+		ret = expand_mp(initial_command);
 
-		/* DEBUG */
-		/*
-		display_command(initial_command);
-		*/
+		if(ret) {
+			/* DEBUG */
+			/*
+			display_command(initial_command);
+			*/
 
-		if(command->display_text && interactive)
-			puts(initial_command->text);
+			if(command->display_text && interactive)
+				puts(initial_command->text);
 
-		/* EXECUTE COMMAND */
-		exec_command(initial_command);
+			/* EXECUTE COMMAND */
+			exec_command(initial_command);
+		}
 	}
 
 
 	/* LOG & CLEAN UP DATA */
 	check_for_job_exit();
-	/*
-	signal(SIGTTIN,SIG_IGN);
-	signal(SIGTTOU,SIG_IGN);
-	tcsetpgrp(control_term,getpgrp());
-	*/
 
 	free_command(initial_command);
 

@@ -1,6 +1,6 @@
 # Specify your operating system:
-#OS=Solaris
-OS=LINUX
+OS=Solaris
+#OS=LINUX
 #OS=IRIX
 #OS=BSD
 

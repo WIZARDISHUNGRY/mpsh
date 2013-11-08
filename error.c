@@ -44,24 +44,31 @@ error.c:
 */
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <strings.h>
 #include <errno.h>
 
 #ifdef LINUX
-#include <stdlib.h>
-#include <string.h>
 #endif
 
 #ifdef BSD
-#include <stdlib.h>
-#include <string.h>
 #endif
 
+#include "mpsh.h"
+
+char *quote_type[] = {
+	"none",
+	"double quote",
+	"single quote",
+	"parentheses",
+	"curly bracket",
+	"square bracket",
+	NULL
+} ;
 
 
-/*
-int errno;
-*/
+
 int error_level;
 
 
@@ -91,7 +98,51 @@ int err;
 	if(error_level > 2) {
 		if(err) fprintf(stderr," %s",strerror(errno));
 	}
-	puts("");
+	fprintf(stderr,"\n");
+}
+
+report_mismatched_something(command)
+struct command *command;
+{
+	struct word_list *w;
+	char buff[64];
+	int depth;
+	int q;
+
+	w = find_last_word(&command->words);
+
+	depth = command->quote_depth;
+	q = 0;
+
+	if(depth < 1) {
+		switch(command->ch) {
+			case '\"':
+				q = QUOTE_DOUBLE;
+				break;
+			case '\'':
+				q = QUOTE_SINGLE;
+				break;
+			case '(':
+			case ')':
+				q = QUOTE_PAREN;
+				break;
+			case '{':
+			case '}':
+				q = QUOTE_BRACE;
+				break;
+			case '[':
+			case ']':
+				q = QUOTE_SQUARE;
+				break;
+		}
+	} else {
+		q = command->quote_stack[depth];
+	}
+
+	sprintf(buff,"Mismatched %s",quote_type[q]);
+	if(command->ch != '\n')
+		add_letter_to_word(w,command->ch);
+	report_error(buff,w->word,0,0);
 }
 
 

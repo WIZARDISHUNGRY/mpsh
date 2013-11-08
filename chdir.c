@@ -46,6 +46,8 @@ chdir.c:
 
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <strings.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -53,13 +55,9 @@ chdir.c:
 #include <unistd.h>
 
 #ifdef LINUX
-#include <stdlib.h>
-#include <string.h>
 #endif
 
 #ifdef BSD
-#include <stdlib.h>
-#include <string.h>
 #endif
 
 

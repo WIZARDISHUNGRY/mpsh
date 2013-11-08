@@ -46,21 +46,19 @@ env.c:
 
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <dirent.h>
 #include <fnmatch.h>
-#include <strings.h>
 
 
 #ifdef LINUX
-#include <stdlib.h>
-#include <string.h>
 #endif
 
 #ifdef BSD
-#include <stdlib.h>
-#include <string.h>
 #endif
 
 
@@ -79,6 +77,7 @@ int update_history_setting();
 int update_cdhistory_setting();
 int update_error_level();
 int update_umask();
+int update_nice();
 
 struct internal_variables int_vars[] = {
 	/* mpsh-version MUST be entry [0] */
@@ -88,6 +87,7 @@ struct internal_variables int_vars[] = {
 	"mpsh-cdhistory=",		"1",			update_cdhistory_setting,
 	"mpsh-error-level=",	"1",			update_error_level,
 	"mpsh-umask=",			NULL,			update_umask,
+	"mpsh-nice=",			"10",			update_nice,
 	NULL, NULL, NULL
 } ;
 
@@ -548,6 +548,15 @@ char *str;
 
 	sscanf(str,"%o",&u);
 	umask(u);
+}
+
+update_nice(str)
+char *str;
+{
+	if(atoi(str) < 1) {
+		report_error("mpsh-nice should be an integer greater than 0",str,0,0);
+		set_env_str("mpsh-nice=10");
+	}
 }
 
 delete_env(src)

@@ -46,8 +46,10 @@ exec.c:
 
 
 #include <stdio.h>
-#include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
 #include <strings.h>
+#include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -60,13 +62,9 @@ exec.c:
 
 #ifdef LINUX
 #include <wait.h>
-#include <stdlib.h>
-#include <string.h>
 #endif
 
 #ifdef BSD
-#include <stdlib.h>
-#include <string.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/time.h>
@@ -156,11 +154,6 @@ struct command *command;
 			if((command->flags & FLAG_BACK) == 0x00)
 				wait_job(job);
 		}
-		/*
-		signal(SIGTTIN,SIG_IGN);
-		signal(SIGTTOU,SIG_IGN);
-		tcsetpgrp(control_term,getpgrp());
-		*/
 	}
 }
 
@@ -190,11 +183,22 @@ int pipe_in, pipe_out;
 	if(pid == 0) { /* child. */
 
 		/* Process group stuff. */
-		pgrp = getpid();
-		setpgid(pgrp,pgrp);
+
 		if((command->flags & FLAG_BACK) == 0x00) {
+			pgrp = getpid();
+			setpgid(pgrp,pgrp);
 			signal(SIGTTOU,SIG_IGN);
 			tcsetpgrp(control_term,pgrp);
+		} else {
+			/*
+			close(fileno(stdin));
+			*/
+#ifdef BSD
+			setsid();
+#else
+			pgrp = getpid();
+			setpgid(pgrp,pgrp);
+#endif
 		}
 
 		/* Redirect IO */
@@ -267,19 +271,19 @@ int pipe_in, pipe_out;
 		if(command->flags & FLAG_SETOP) {
 			if(command->flags & FLAG_SETOP_UNION) {
 				setop_union(command);
-				_exit(1);
+				_exit(0);
 			}
 			if(command->flags & FLAG_SETOP_INTER) {
 				setop_intersection(command);
-				_exit(1);
+				_exit(0);
 			}
 			if(command->flags & FLAG_SETOP_DIFF) {
 				setop_difference(command);
-				_exit(1);
+				_exit(0);
 			}
 			if(command->flags & FLAG_SETOP_SYMM) {
 				setop_symmetric(command);
-				_exit(1);
+				_exit(0);
 			}
 			if(command->flags & FLAG_SETOP_EQUALS) {
 				if(setop_equals(command) == 0)
@@ -302,17 +306,27 @@ int pipe_in, pipe_out;
 		}
 
 		if(command->words->word[0] == '[') { /* Command grouping */
+			if(command->flags & FLAG_BACK) {
+#ifdef BSD
+				/* we solved this earlier... */
+#else
+				setpgrp();
+#endif
+			}
 			pt = command->words->word+1;
 			pt[strlen(pt)-1] = '\0';
-			parse_and_run(pt,INTERACTIVE);
-			_exit(1);
+			if(command->flags & FLAG_BACK)
+				parse_and_run(pt,NONINTERACTIVE);
+			else
+				parse_and_run(pt,INTERACTIVE);
+			_exit(0);
 		}
 
 		if(try_exec_builtin(1,command)) _exit(0);
 
 		if(!command->path) {
 			report_error("Command not found",command->words->word,0,0);
-			_exit(0);
+			_exit(1);
 		}
 
 		/* Finally, execute it. */
@@ -477,8 +491,6 @@ int pid;
 
 	signal(SIGTTIN,SIG_IGN);
 	signal(SIGTTOU,SIG_IGN);
-	tcsetpgrp(control_term,getpgrp());
-
 }
 
 

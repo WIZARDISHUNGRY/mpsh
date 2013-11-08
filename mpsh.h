@@ -49,7 +49,7 @@ mpsh.h
 
 
 
-#define FLAG_LOWER		0x00FF
+#define FLAG_LOWER		0xFFFF
 #define FLAG_REDIRECT	0x0001
 #define FLAG_BACK		0x0002
 #define FLAG_BATCH		0x0004
@@ -58,15 +58,16 @@ mpsh.h
 #define FLAG_COND		0x0020
 #define FLAG_NEGCOND	0x0040
 #define FLAG_NICE		0x0080
+#define FLAG_SMP_SYM	0x0100
 
-#define FLAG_SETOP				0xFF00
-#define FLAG_SETOP_UNION		0x0100
-#define FLAG_SETOP_INTER		0x0200
-#define FLAG_SETOP_DIFF			0x0400
-#define FLAG_SETOP_SYMM			0x0800
-#define FLAG_SETOP_SUBSET		0x1000
-#define FLAG_SETOP_SUBSET_REV	0x2000
-#define FLAG_SETOP_EQUALS		0x4000
+#define FLAG_SETOP				0xFF0000
+#define FLAG_SETOP_UNION		0x010000
+#define FLAG_SETOP_INTER		0x020000
+#define FLAG_SETOP_DIFF			0x040000
+#define FLAG_SETOP_SYMM			0x080000
+#define FLAG_SETOP_SUBSET		0x100000
+#define FLAG_SETOP_SUBSET_REV	0x200000
+#define FLAG_SETOP_EQUALS		0x400000
 
 
 
@@ -111,6 +112,7 @@ struct command {
 	struct command *pipeline;
 	/* Parsing */
 	char state;
+	char ch;
 	char backslash;
 	int start_of_sub;
 	int quote_depth;
@@ -155,5 +157,4 @@ extern int control_term;
 /* For parse_and_run() */
 #define INTERACTIVE 1
 #define NONINTERACTIVE 0
-
 
