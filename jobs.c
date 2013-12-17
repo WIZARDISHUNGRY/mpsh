@@ -231,13 +231,13 @@ int job;
 
 	wp = wait4(p,&st,WUNTRACED,&ruse);
 
-	/*
-	*/
+	if(wp != p) {
+		return(-1);
+	}
+
 	signal(SIGTTIN,SIG_IGN);
 	signal(SIGTTOU,SIG_IGN);
 	tcsetpgrp(control_term,getpgrp());
-
-	if(wp != p) return(-1);
 
 	current_job_pid = -1;
 
@@ -245,11 +245,12 @@ int job;
 		puts("Killed");
 		ret = -1;
 	} 
-	
+
 	if(WIFSTOPPED(st)) {
 		puts("Stopped");
 		printf("Job: %s\n",jobs[job].text);
 		jobs[job].running = 0;
+		change_history_status(jobs[job].history,"Stopped");
 		default_bg_job = job;
 		inc_last_fg();
 		jobs[job].last_fg = 1;
@@ -306,17 +307,20 @@ check_for_job_exit() { /* BSD VERSION */
 	}
 }
 
-check_for_job_wake() { /* BSD VERSION */
+check_for_job_wake(dp) /* BSD VERSION */
+int dp;
+{ 
 	int pid;
 	int job;
 	struct rusage ruse;
 	int st;
 
-	while((pid = wait4(WAIT_ANY,&st,WCONTINUED|WNOHANG,&ruse)) != 0) {
+	while((pid = wait4(dp,&st,WCONTINUED,&ruse)) != 0) {
 		if(pid != 0) {
 			for(job=0; job<JOB_ENTRIES; job++) {
 				if(jobs[job].pid == pid) {
 					jobs[job].running = 1;
+					change_history_status(jobs[job].history,"Running");
 					wait_job(job);
 					return;
 				}
@@ -361,6 +365,7 @@ int job;
 		puts("Stopped");
 		printf("Job: %s\n",jobs[job].text);
 		jobs[job].running = 0;
+		change_history_status(jobs[job].history,"Stopped");
 		default_bg_job = job;
 		inc_last_fg();
 		jobs[job].last_fg = 1;
@@ -420,16 +425,20 @@ check_for_job_exit() { /* NON-BSD VERSION */
 	}
 }
 
-check_for_job_wake() { /* NON-BSD VERSION */
+check_for_job_wake(dp) /* NON-BSD VERSION */
+int dp;
+{
 	int pid;
 	siginfo_t infop;
 	int job;
-	while(waitid(P_ALL,0,&infop,WCONTINUED|WNOHANG) == 0) {
+
+	while(waitid(P_PID,dp,&infop,WCONTINUED) == 0) {
 		pid = infop.si_pid;
-		if(pid != 0) {
+		if(pid == dp) {
 			for(job=0; job<JOB_ENTRIES; job++) {
 				if(jobs[job].pid == pid) {
 					jobs[job].running = 1;
+					change_history_status(jobs[job].history,"Running");
 					wait_job(job);
 					return;
 				}
@@ -447,12 +456,6 @@ char *arg;
 
 	if(arg) {
 		pid = (pid_t) atoi(arg);
-		/*
-		if(pid < 1) {
-			find_bg_job();
-			pid = jobs[default_bg_job].pid;
-		}
-		*/
 	} else {
 		if(default_bg_job == -1) find_bg_job();
 		if(jobs[default_bg_job].pid == 0) find_bg_job();
@@ -463,10 +466,7 @@ char *arg;
 		signal(SIGTTOU,SIG_IGN);
 		tcsetpgrp(control_term,getpgid(pid));
 		kill(pid * -1,SIGCONT);
-		/*
-		*/
-		sleep(1);
-		check_for_job_wake();
+		check_for_job_wake(pid);
 	} else {
 		report_error("Unknown job",arg,0,0);
 		return(0);

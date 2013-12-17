@@ -76,17 +76,13 @@ init_cdhistory() {
 	int i;
 	char *pt;
 
-	/*
-	show_cdhistory_sub = 1;
-	*/
-
 	for(i=0; i<CDHISTORY_SIZE; i++)
 		cdhistory[i] = NULL;
 
 	cdhistory_next = 0;
 
 	/* Add history entry */
-	pt = getcwd(NULL,256);
+	pt = dup_cwd();
 	if(pt) {
 		cdhistory[cdhistory_next] = pt;
 		cdhistory_next = (cdhistory_next+1)%CDHISTORY_SIZE;
@@ -171,8 +167,9 @@ int which;
 
 		if(isdigit(pt[0])) {
 			h = atoi(pt);
-			arg = strdup(cdhistory[h%CDHISTORY_SIZE]);
+			arg = cdhistory[h%CDHISTORY_SIZE];
 			if(show_cdhistory_sub) puts(arg);
+			goto found;
 		} else for(i=CDHISTORY_SIZE-2; i>=0; i--) {
 			h = cdhistory_next+i;
 			cdh = cdhistory[h%CDHISTORY_SIZE];
@@ -180,16 +177,28 @@ int which;
 				sl = strlen(cdh);
 				for(j=0; j<sl; j++) {
 					if(strncmp(pt,cdh+j,len) == 0) {
-						arg = strdup(cdh);
+						arg = cdh;
 						if(show_cdhistory_sub) puts(arg);
 						goto found;
 					}
 				}
 			}
 		}
+		report_error("Directory not found",arg,0,0);
+		return(2);
 	}
 
 	found:
+
+	ret = change_dir(arg);
+	return(ret);
+}
+
+change_dir(arg)
+char *arg;
+{
+	char *pt;
+	int ret;
 
 	ret = chdir(arg);
 	if(ret == -1) {
@@ -197,8 +206,7 @@ int which;
 		return(2);
 	}
 
-	/* Add history entry */
-	pt = getcwd(NULL,256);
+	pt = dup_cwd();
 	if(pt) {
 		cdhistory[cdhistory_next] = pt;
 		cdhistory_next = (cdhistory_next+1)%CDHISTORY_SIZE;
@@ -206,7 +214,6 @@ int which;
 			free(cdhistory[cdhistory_next]);
 		cdhistory[cdhistory_next] = NULL;
 	}
-
 	return(1);
 }
 

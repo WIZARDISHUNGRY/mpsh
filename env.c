@@ -78,6 +78,7 @@ int update_cdhistory_setting();
 int update_error_level();
 int update_umask();
 int update_nice();
+int update_null();
 
 struct internal_variables int_vars[] = {
 	/* mpsh-version MUST be entry [0] */
@@ -88,6 +89,8 @@ struct internal_variables int_vars[] = {
 	"mpsh-error-level=",	"1",			update_error_level,
 	"mpsh-umask=",			NULL,			update_umask,
 	"mpsh-nice=",			"10",			update_nice,
+	"mpsh-hist-disp=",		"nc",			update_null,
+	"mpsh-hist-disp-l=",	"nusxc",		update_null,
 	NULL, NULL, NULL
 } ;
 
@@ -233,7 +236,7 @@ char *dir, *command;
 	return(c);
 }
 
-struct word_list *find_path(arg)
+char *find_path(arg)
 char *arg;
 {
 	struct word_list *w;
@@ -246,7 +249,7 @@ char *arg;
 	}
 
 	if(index(arg,'/') != NULL) {
-		return(init_word_str(arg));
+		return(strdup(arg));
 	}
 
 	w = search_path;
@@ -255,12 +258,12 @@ char *arg;
 		if(strcmp(c->dir,".") == 0) { 
 			/* Search current directory by hand */
 			if(stat(arg,&st) == 0) {
-				return(init_word_str(arg));
+				return(strdup(arg));
 			}
 		} else {
 			if(strcmp(arg,c->command) == 0) {
 				sprintf(buff,"%s/%s",c->dir,arg);
-				return(init_word_str(buff));
+				return(strdup(buff));
 			}
 		}
 	}
@@ -275,7 +278,7 @@ char *arg;
 		sprintf(buff,"%s/%s",w->word,arg);
 		if(stat(buff,&st) == 0) {
 			update_search_path();
-			return(init_word_str(buff));
+			return(strdup(buff));
 		}
 		w = w->next;
 	} while(w->next);
@@ -574,11 +577,19 @@ char *src;
 	for(w=global_env->next; w; w=w->next) {
 		if(strncmp(str,w->word,len) == 0) {
 			last->next = w->next;
+			free(str);
 			return;
 		}
 		last = w;
 	}
 	report_error("variable not found",src,0,0);
+	free(str);
 }
 
+
+update_null(str)
+char *str;
+{
+	;
+}
 

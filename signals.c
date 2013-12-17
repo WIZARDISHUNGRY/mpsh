@@ -73,6 +73,7 @@ int s;
 	if(p != -1) kill(p,SIGINT);
 }
 
+
 static void sig_stop(s)
 int s;
 {
@@ -89,8 +90,6 @@ int s;
 	signal(SIGCONT,sig_cont);
 	p = current_job_pid;
 	if(p != -1) kill(p,SIGCONT);
-	/*
-	*/
 }
 
 static void sig_out(s)

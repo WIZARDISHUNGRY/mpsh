@@ -1,20 +1,20 @@
 							 Introduction
 
-INTRODUCTION TO MPSH (Version 1.1, 2013-11-08)
+INTRODUCTION TO MPSH (Version 1.2, 2013-12-17)
 
 mpsh is an experimental command interpreter for Unix systems written
-by Dave Fischer at the Center for Computational Aesthetics
-(http://www.cca.org) and distributed under the 3-clause BSD license.
+by Dave Fischer at the Center for Computational Aesthetics and
+distributed under the 3-clause BSD license.
 
 "mpsh" stands for "multi-processor shell", because one of its core
 features is the ability to split certain jobs into multiple processes.
 
 The major features are:
 
-Job Handlers
-Multiprocess Jobs
-Environment Variable Command Aliases
-Set Theory Operators
+	Job Handlers
+	Multiprocess Jobs
+	Environment Variable Command Aliases
+	Set Theory Operators
 
 								Theory
 
@@ -121,12 +121,13 @@ stuff I don't want has thus far prevented an OSX port.
 
 							 Job Handlers
 
-Job handlers send a command to some external program to handle instead
-of executing it directly. For example: batch queues, execution on
-remote nodes, delayed execution via /bin/at, run in a new x-term
-window, etc. All job handlers are user configured. The handler is
-specified by a single letter, which is then the argument after "&".
-The handler can be given arguments as well. Here are some examples:
+Job handlers allow mpsh to send a command to some external program to
+handle instead of executing it directly. For example: sending jobs to
+batch queues, execution on remote nodes, delayed execution via
+/bin/at, run a command in a new x-term window, etc. All job handlers
+are user configured. The handler is specified by a single letter,
+which is then the argument after "&". The handler can be given
+arguments as well. Here are some examples:
 
 Configure job handler "q" to submit job to a batch queue, via the
 command "batch-submit". When a command is run with the "&q" option,
@@ -246,25 +247,27 @@ True/False settings are set to 1 or 0.
 
 The internal settings are:
 
-	mpsh-version - version string
-	mpsh-prompt - command prompt
-	mpsh-history - Show command history substitution?
-	mpsh-cdhistory - Show directory history substitution?
-	mpsh-umask - umask, in octal
-	mpsh-nice - nice value for "&-[-]"
+   mpsh-version - version string
+   mpsh-prompt - command prompt
+   mpsh-history - Show command history substitution?
+   mpsh-cdhistory - Show directory history substitution?
+   mpsh-hist-disp - History display format
+   mpsh-hist-disp-l - History "-l" display format
+   mpsh-umask - umask, in octal
+   mpsh-nice - nice value for "&-[-]"
 
 If you set mpsh-nice=5, then "command &-" will run at nice level 5,
 "command &---" at nice level 15, etc. The default mpsh-nice value is
 10.
 
-	mpsh-error-level - error verbosity level 0 - 3
+   mpsh-error-level - error verbosity level 0 - 3
 
 Error messages are formatted:
 
-	0: none
-	1: error
-	2: error [string]
-	3: error [string] errno-string
+0: none
+1: error
+2: error [string]
+3: error [string] errno-string
 
 For example, the same error with different error level settings:
 
@@ -295,13 +298,10 @@ whitespace.
 
 						   Command Grouping
 
-Command grouping is accomplished in mpsh with square brackets.
+Command grouping is accomplished in mpsh with square brackets. The
+sequence between the brackets is executed in a sub-shell.
 
 	mpsh$ [ cd src ; tar cf - . ] | [ cd /backup/src ; tar xf - ]
-
-Although command grouping can only start with the beginning of a
-command, not a command argument or mid-word, mpsh really expects all
-quotes, parentheses, and brackets to be nicely matched.
 
 						 Set Theory Operations
 
@@ -324,19 +324,19 @@ instead of commas):
 
 The basic set theory operations are:
 
-	Union: |U
-	Intersection: |^
-	Difference: |\
-	Synonym for difference: |-
-	Symmetric difference: |o
+Union: |U
+Intersection: |^
+Difference: |\
+Synonym for difference: |-
+Symmetric difference: |o
 
 You can also execute commands conditionally based on set theory tests:
 
 	mpsh$ command |[<=>] command ; conditional-command
 
-	If A is a subset of B: |<
-	If B is a subset of A: |>
-	If A equals B: |=
+If A is a subset of B: |<
+If B is a subset of A: |>
+If A equals B: |=
 
 	mpsh$ { red } |< { red green blue } ; echo red is a subset of rgb.
 	red is a subset of rgb.
@@ -358,9 +358,9 @@ but subsets aren't, etc. Does not support infinite sets.
 
 IO redirection is the same for pipes and files. The options are:
 
-	e - stderr
-	b - both (stdout & stderr)
-	a - append
+   e - stderr
+   b - both (stdout & stderr)
+   a - append
 
 	mpsh$ command --help |e more
 	mpsh$ command >a data.out >e err.out
@@ -386,38 +386,62 @@ See also the Set Theory section, for set theory conditionals.
 							Command History
 
 Command history works about the same as in most Unix shells. Repeat
-previous command, by name, by number, or most recent:
+previous command, by name, by number, or most recent. "pattern" will
+match the beginning of a command, while "*pattern" will match anywhere
+in the string.
 
 	mpsh$ !command
+	mpsh$ !*arg
 	mpsh$ ![n]
 	mpsh$ !
 
-Display command history:
+You can also retrieve history information with: !command.field where
+field is one of: text, dir, or num (for the text of the command, the
+directory it executed in, or the history number). For example:
+
+Go to the directory that you last used vi in:
+
+	mpsh$ cd (!vi.dir)
+
+Look at the detailed history entry for the last invocation of gcc:
+
+	mpsh$ history (!gcc.num)
+
+Subsitute "blue" for "red" in the last "echo" command, and then
+execute it.
+
+	mpsh$ (!echo.text | sed s/red/blue/)
+
+The history command displays command history entries. You can display
+the short form, long form, user-specified format, or full details for
+one entry:
 
 	mpsh$ history
 	mpsh$ history -l
+	mpsh$ history format-string
 	mpsh$ history [n]
 
-history -l shows user & system CPU usage, exit status ("Running", exit
-value, or signal if the process was killed), and command:
+The fields displayed by the history command are controlled by format
+strings, one letter for each field. The simple "history" display is
+controlled by the mpsh-hist-disp environment variable, and the long
+format is controlled by the mpsh-hist-disp-l environment variable. You
+can also specify a new format as the argument to history. For example,
+to display just the commands, and the directories each one executed
+in, use:
 
-	mpsh$ history -l
-	Num  User   Sys   Exit Command
-	0 00:00 00:00      - history -c
-	1 00:00 00:00 SIGINT sleep 10                                
-	2 00:00 00:04     ok dd bs=1024k count=1024 if=/dev/zero of=/dev/null &
-	3 00:00 00:00     ok jobs                                    
+	mpsh$ history dc
 
-history [n] shows more data about completed jobs.
+The fields available via the format strings are:
 
-	mpsh% history 2
-	Entry:       2
-	Started:     Fri Oct 18 17:08:45 2013
-	Ended:       Fri Oct 18 17:08:51 2013
-	User CPU:    00:00
-	System CPU:  00:04
-	Exit Status: 0
-	Command:     dd bs=1024k count=1024 if=/dev/zero of=/dev/null &
+   c - Command
+   C - Command, 20 characters
+   n - Number
+   u - CPU user time
+   s - CPU system time
+   e - Elapsed time
+   x - Exit status
+   d - Directory
+   D - Directory, 20 characters
 
 (CPU usage is currently only displayed in Solaris & BSD, because
 Linux's waitid() system call doesn't bother to fill in all the data in
@@ -449,6 +473,13 @@ Show directory history:
 Clear directory history:
 
 	mpsh$ cd -c
+
+You can also change directory to the directory of a command in command
+history, via command history fields:
+
+	mpsh$ cd (!vi.dir)
+
+See command history section for details.
 
 					   List of Builtin Commands
 
@@ -564,8 +595,8 @@ Will expand to the first match in the directories listed in $PATH.
 
 Startup files are:
 
-	$HOME/.mpshrc_all - read by all mpsh instances
-	$HOME/.mpshrc_login - read by mpsh logins
+   $HOME/.mpshrc_all - read by all mpsh instances
+   $HOME/.mpshrc_login - read by mpsh logins
 
 					   Differences From sh/bash
 
@@ -584,7 +615,7 @@ Job PID substitution (%[n], %[string], %%, %-) is generalized. ie:
 
 Repeat last command / cd to last directory is "!", not "!!".
 
-Command substitution is done with parenthesis, not back-quotes.
+Command substitution is done with parentheses, not back-quotes.
 
 Curly braces {...} are used for set theory, not command grouping.
 
@@ -648,6 +679,10 @@ setenv mpsh-history=1
 setenv mpsh-cdhistory=1
 # Max error reporting
 setenv mpsh-error-level=3
+
+# Adjust history display formats as desired:
+setenv mpsh-hist-disp=nc
+setenv mpsh-hist-disp-l=ndxuec
 
 # prompt
 setenv mpsh-prompt="!echo (date '+%l:%M') $HOST 'mpsh% '"

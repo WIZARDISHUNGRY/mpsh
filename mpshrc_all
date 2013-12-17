@@ -42,6 +42,10 @@ setenv mpsh-cdhistory=1
 # Max error reporting
 setenv mpsh-error-level=3
 
+# Adjust history display formats as desired:
+setenv mpsh-hist-disp=nc
+setenv mpsh-hist-disp-l=ndxuec
+
 # prompt
 setenv mpsh-prompt="!echo (date '+%l:%M') $HOST 'mpsh% '"
 

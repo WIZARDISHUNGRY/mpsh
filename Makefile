@@ -1,6 +1,7 @@
 # Specify your operating system:
-OS=Solaris
-#OS=LINUX
+# (Use BSD for OSX.)
+#OS=Solaris
+OS=LINUX
 #OS=IRIX
 #OS=BSD
 
@@ -9,6 +10,7 @@ READLINE=-DREADLINE
 LIBS=-lreadline -lcurses
 
 # Specify your compiler:
+# (OSX must use gcc, not clang! clang masquerading as gcc will not work!)
 CC=gcc
 #CC=cc
 

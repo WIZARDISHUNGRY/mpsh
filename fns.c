@@ -48,6 +48,7 @@ fns.c:
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <unistd.h>
 
 #ifdef LINUX
 #endif
@@ -197,8 +198,13 @@ int ch;
 struct command *init_command() {
 	struct command *new;
 	new = (struct command *) malloc(sizeof(struct command));
-	new->words = NULL;
+	new->text = NULL;
+	new->dir = NULL;
+	/*
 	new->path = NULL;
+	*/
+	new->echo_text = NULL;
+	new->words = NULL;
 	new->flags = 0x0000;
 	new->nice = 0;
 	new->pipe_io_flags = 0x0000;
@@ -227,15 +233,20 @@ struct command *command;
 {
 	struct command *next;
 
-	if(command->text) free(command->text);
+	/* We don't free() c->text or c->dir because those are handed
+		off to history[] as is.
+	*/
+
 	for(;;) {
+		if(command->echo_text) free(command->echo_text);
 		free_word_list(command->words);
 		free_word_list(command->handler_args);
 		free_word_list(command->stderr_filename);
 		free_word_list(command->stdout_filename);
 		next = command->pipeline;
 		free(command);
-		if(next) command = next;
+		if(next) 
+			command = next;
 		else
 			return;
 	}
@@ -292,6 +303,15 @@ char *str;
 
 	while(*pt++);
 
+	return(pt);
+}
+
+char *dup_cwd() {
+	char *tmp, *pt;
+	tmp = getcwd(NULL,1024);
+	if(tmp == NULL) return(strdup("-"));
+	pt = strdup(tmp);
+	free(tmp);
 	return(pt);
 }
 

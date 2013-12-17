@@ -165,19 +165,21 @@ int pipe_in, pipe_out;
 {
 	char **call_argv, **call_env;
 	pid_t pid;
-	struct word_list *path;
+	char *path;
 	pid_t pgrp;
 	char *pt;
+	int ret;
 
 
-	call_env = build_env(command);
-	call_argv = build_argv(command);
+	if(!command->echo_text) {
+		call_env = build_env(command);
+		call_argv = build_argv(command);
 
-	if(try_exec_builtin(0,command))
-		return(-2);
+		ret = try_exec_builtin(0,command);
+		if(ret > 0) return(-2); /* Succeeded */
 
-	path = find_path(command->words->word);
-	command->path = path;
+		path = find_path(command->words->word);
+	}
 
 	pid = fork();
 	if(pid == 0) { /* child. */
@@ -322,17 +324,22 @@ int pipe_in, pipe_out;
 			_exit(0);
 		}
 
+		if(command->echo_text) {
+			puts(command->echo_text);
+			exit(0);
+		}
+
 		if(try_exec_builtin(1,command)) _exit(0);
 
-		if(!command->path) {
+		if(!path) {
 			report_error("Command not found",command->words->word,0,0);
 			_exit(1);
 		}
 
 		/* Finally, execute it. */
 		if(command->flags & FLAG_NICE) nice(command->nice);
-		execve(command->path->word,call_argv,call_env);
-		report_error("Error executing command",command->path->word,0,1);
+		execve(path,call_argv,call_env);
+		report_error("Error executing command",path,0,1);
 		_exit(1);
 	} else { /* Parent process */
 		if(pipe_in != -1) close(pipe_in);
@@ -340,10 +347,11 @@ int pipe_in, pipe_out;
 		/* parent. add job info on child */
 		command->pid = pid;
 	}
+
+	free(call_argv);
+	free(call_env);
 	return(1);
 }
-
-
 
 
 call_batch(command)
@@ -367,7 +375,8 @@ struct command *command;
 	if(command->handler_args) {
 		args = words_to_string(command->handler_args);
 		len = strlen(handler) + strlen(args) + 2;
-		tmp = handler;
+		tmp = strdup(handler);
+		free(handler);
 		handler = (char *) malloc(len);
 		if(args[0]) 
 			sprintf(handler,"%s %s",tmp,args);
@@ -536,6 +545,7 @@ char *text_command;
 			}
 		}
 		fclose(in);
+		free(output);
 		return(words);
 	}
 }

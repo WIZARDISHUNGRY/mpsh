@@ -95,6 +95,7 @@ char *env[];
 #else
 	char line[1024];
 #endif
+	char *pr;
 
 
 	init_all(argc,argv,env);
@@ -105,12 +106,15 @@ char *env[];
 
 
 #ifdef READLINE
-	while(line = readline(get_prompt())) {
+	while(line = readline(pr=get_prompt())) {
+		free(pr);
 		parse_and_run(line,INTERACTIVE);
 	}
 #else
 	for(;;) {
-		printf("%s",get_prompt());
+		pr = get_prompt();
+		printf("%s",pr);
+		free(pr);
 		if(!gets(line)) break;
 		parse_and_run(line,INTERACTIVE);
 	}
@@ -168,10 +172,14 @@ int interactive;
 			if(command->display_text && interactive)
 				puts(initial_command->text);
 
+			command->dir = dup_cwd();
+
 			/* EXECUTE COMMAND */
 			exec_command(initial_command);
 		}
 	}
+
+	skip:
 
 
 	/* LOG & CLEAN UP DATA */

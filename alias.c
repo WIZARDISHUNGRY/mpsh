@@ -36,9 +36,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 mpsh by Dave Fischer http://www.cca.org
 
-prompt.c:
+alias.c:
 
-
+	alias functions
 
 */
 
@@ -55,43 +55,22 @@ prompt.c:
 #ifdef BSD
 #endif
 
+
 #include "mpsh.h"
 
-char *prompt_string;
-#define DEFAULT_PROMPT "mpsh$ "
 
-init_prompt() {
-	prompt_string = NULL;
-	update_prompt_string(get_env("mpsh-prompt"));
-	if(!prompt_string) prompt_string = DEFAULT_PROMPT;
+struct alias {
+	char *name;
+	char *text;
+	struct alias *next;
+} ;
+
+struct alias *aliases;
+
+
+init_aliases() {
+	aliases = NULL;
 }
 
-display_prompt() {
-	fputs(prompt_string,stdout);
-	fflush(stdout);
-}
-
-char *get_prompt() {
-	char *tmp;
-
-	if(prompt_string[0] == '!') {
-		tmp = read_from_command(prompt_string+1);
-		return(tmp);
-	}
-
-	return(strdup(prompt_string));
-}
-
-update_prompt_string(str)
-char *str;
-{
-	char *pt;
-
-	if(str) {
-		pt = (char *) malloc(strlen(str)+1);
-		strcpy(pt,str);
-		prompt_string = pt;
-	}
-}
 
 

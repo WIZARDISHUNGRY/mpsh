@@ -138,9 +138,6 @@ struct command *command;
 		if(strcmp(command->words->word,builtin[i].name) == 0) {
 			command->pid = -1;
 			return((*(builtin[i].fn))(command,which));
-			/*
-			return(1);
-			*/
 		}
 	}
 	return(0);
@@ -242,7 +239,7 @@ int which;
 
 	if(which == PARENT) {
 		if(arg && strcmp(arg->word,"-c") == 0) {
-			init_history();
+			clear_history();
 			return(1);
 		} else {
 			return(0);

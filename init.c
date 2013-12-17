@@ -162,9 +162,7 @@ int quiet;
 	}
 
 	fclose(fp);
-
 	free(buff);
-
 	return(0);
 }
 

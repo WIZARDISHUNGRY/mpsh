@@ -53,6 +53,7 @@ history.c:
 #include <time.h>
 #include <sys/types.h>
 #include <signal.h>
+#include <unistd.h>
 
 
 #ifdef LINUX
@@ -74,19 +75,20 @@ history.c:
 
 struct history_entry {
 	char *text;
+	char *dir;
+	char exit[16];
 	time_t user_time;
 	time_t sys_time;
+	time_t timestamp;
+	time_t elapsed;
 	char time_start[28];
 	char time_end[28];
-	int status;
-	int signo;
-	int code;
-	int errno;
 	int smp_id;
 } ;
 
-#define HISTORY_SIZE 1024
-struct history_entry history[HISTORY_SIZE];
+#define HISTORY_ALLOC_SIZE 1024
+int hist_allocated;
+struct history_entry **history;
 
 int history_next;
 
@@ -97,16 +99,31 @@ char *format_time();
 init_history() {
 	int i;
 
-	/*
-	show_history_sub = 0;
-	*/
+	history = (struct history_entry **) 
+		malloc(sizeof(struct history_entry *)*HISTORY_ALLOC_SIZE);
+	hist_allocated = HISTORY_ALLOC_SIZE;
 
-	for(i=0; i<HISTORY_SIZE; i++)
-		history[i].text = NULL;
+	for(i=0; i<hist_allocated; i++) {
+		history[i] = NULL;
+	}
 
 	history_next = 0;
 }
 
+clear_history() {
+	int i;
+	struct history_entry *hp;
+
+	for(i=0; history[i]; i++) {
+		hp = history[i];
+		free(hp->text);
+		free(hp->dir);
+		free(hp);
+		history[i] = NULL;
+	}
+
+	init_history();
+}
 
 int add_history_entry(command)
 struct command *command;
@@ -126,20 +143,20 @@ struct command *command;
 	}
 
 	if(command->smp_id)
-		for(i=0; i<HISTORY_SIZE; i++)
-			if(history[i].smp_id == command->smp_id) return(-1);
+		for(i=0; history[i]; i++)
+			if(history[i]->smp_id == command->smp_id) return(-1);
 
+	hist = get_new_hist_entry();
+	h = history[hist];
 
-	hist = history_next;
-	history_next++;
-	h = &history[hist%HISTORY_SIZE];
-	h->text = strdup(command->text);
+	h->text = command->text;
+	h->dir = command->dir;
+	strcpy(h->exit,"Running");
 	h->user_time = h->sys_time = 0L;
-	h->status = 0x00;
-	h->signo = 0x00;
-	h->errno = 0x00;
+	h->elapsed = -1;
 
 	time(&tt);
+	h->timestamp = tt;
 	strcpy(h->time_start,ctime(&tt));
 	h->time_start[strlen(h->time_start)-1] = '\0';
 	strcpy(h->time_end,"Running");
@@ -147,6 +164,25 @@ struct command *command;
 	h->smp_id = command->smp_id;
 
 	return(hist);
+}
+
+get_new_hist_entry() {
+	int i;
+	int h;
+
+	for(i=0; history[i]; i++) ;
+
+	if(i+1 == hist_allocated) {
+		hist_allocated += HISTORY_ALLOC_SIZE;
+		history = realloc(history,sizeof(struct history_entry *)*HISTORY_ALLOC_SIZE);
+		h = i;
+		while(h < hist_allocated) history[h++] = NULL;
+	}
+
+	history[i] = (struct history_entry *) 
+		malloc(sizeof(struct history_entry));
+
+	return(i);
 }
 
 add_history_builtin(command)
@@ -166,17 +202,17 @@ struct command *command;
 		len = strlen(command->text);
 	}
 
-	hist = history_next;
-	history_next++;
-	h = &history[hist%HISTORY_SIZE];
-	h->text = strdup(command->text);
+	hist = get_new_hist_entry();
+	h = history[hist];
+
+	h->text = command->text;
+	h->dir = command->dir;
+	strcpy(h->exit,"ok");
 	h->user_time = h->sys_time = 0L;
-	h->status = 0x00;
-	h->signo = 0x00;
-	h->errno = 0x00;
-	h->code = CLD_EXITED;
 
 	time(&tt);
+	h->timestamp = tt;
+	h->elapsed = 0;
 	strcpy(h->time_start,ctime(&tt));
 	h->time_start[strlen(h->time_start)-1] = '\0';
 	strcpy(h->time_end,ctime(&tt));
@@ -197,27 +233,30 @@ struct rusage *ruse;
 	struct history_entry *hp;
 	int div;
 	time_t tt;
+	int code, status;
 
 	if(hist == -1) return;
 
-	hp = &history[hist%HISTORY_SIZE];
+	hp = history[hist];
 
 	if(ruse) {
-		hp->signo = WTERMSIG(st);
-		hp->code = WIFEXITED(st) ? CLD_EXITED : 0;
-		hp->errno = 0;
+		code = WIFEXITED(st) ? CLD_EXITED : 0;
 
 		if(WIFEXITED(st)) { /* Child exit, CPU usage stats available */
 			hp->user_time += ruse->ru_utime.tv_sec;
 			hp->sys_time += ruse->ru_stime.tv_sec;
-			hp->status = WEXITSTATUS(st);
+			status = WEXITSTATUS(st);
 		} else
-			hp->status = WIFSIGNALED(st);
+			status = WIFSIGNALED(st);
 	}
 
 	time(&tt);
 	strcpy(hp->time_end,ctime(&tt));
+	hp->elapsed = tt - hp->timestamp;
 	hp->time_end[strlen(hp->time_end)-1] = '\0';
+
+	if(ruse) set_exit_status(hp,code,status);
+	else strcpy(hp->exit,"ok");
 }
 
 add_history_time(hist,st,ruse) /* BSD VERSION */
@@ -231,7 +270,7 @@ struct rusage *ruse;
 
 	if(hist == -1) return;
 
-	hp = &history[hist%HISTORY_SIZE];
+	hp = history[hist];
 
 	if(ruse) {
 		if(WIFEXITED(st)) { /* Child exit, CPU usage stats available */
@@ -250,29 +289,33 @@ siginfo_t *infop;
 	struct history_entry *hp;
 	int div;
 	time_t tt;
+	int code, status;
 
 	if(hist == -1) return;
 
 	/* Is this portable? */
 	div = sysconf(_SC_CLK_TCK);
 
-	hp = &history[hist%HISTORY_SIZE];
+	hp = history[hist];
 
 	if(infop) {
-		hp->signo = infop->si_signo;
-		hp->code = infop->si_code;
-		hp->errno = infop->si_errno;
+		code = infop->si_code;
 
-		if(hp->signo == SIGCLD) { /* Child exit, CPU usage stats available */
+		if(infop->si_signo == SIGCLD) { 
+			/* Child exit, CPU usage stats available */
 			hp->user_time += infop->si_utime/div;
 			hp->sys_time += infop->si_stime/div;
-			hp->status = infop->si_status;
+			status = infop->si_status;
 		}
 	}
 
 	time(&tt);
 	strcpy(hp->time_end,ctime(&tt));
+	hp->elapsed = tt - hp->timestamp;
 	hp->time_end[strlen(hp->time_end)-1] = '\0';
+
+	if(infop) set_exit_status(hp,code,status);
+	else strcpy(hp->exit,"ok");
 }
 
 
@@ -289,7 +332,7 @@ siginfo_t *infop;
 	/* Is this portable? */
 	div = sysconf(_SC_CLK_TCK);
 
-	hp = &history[hist%HISTORY_SIZE];
+	hp = history[hist];
 
 	if(infop) {
 		if(infop->si_signo == SIGCLD) { /* CPU usage stats available */
@@ -311,30 +354,50 @@ char *arg;
 	char buff1[32], buff2[32];
 	int user_widest, sys_widest, exit_widest;
 	int len;
+	char *fmt;
+	int *widths;
+	time_t tt;
 
 	if(arg == NULL) {
-		details = 0;
+		fmt = get_env("mpsh-hist-disp");
 	} else {
 		if(strcmp(arg,"-l") == 0) {
-			details = 1;
+			fmt = get_env("mpsh-hist-disp-l");
 			arg = NULL;
 		}
 	}
 
 	if(arg != NULL) {
 		if(isdigit(arg[0])) {
-			hp = &(history[atoi(arg)%HISTORY_SIZE]);
+			h = atoi(arg);
+			for(i=0; history[i]; i++) ;
+			if(h >= i) {
+				report_error("History entry out of bounds",arg,0,0);
+				return;
+			}
+			hp = history[h];
 			if(hp->text) {
 				printf("Entry:       %d\n",atoi(arg));
 				printf("Started:     %s\n",hp->time_start);
 				printf("Ended:       %s\n",hp->time_end);
+
+				if(hp->elapsed != -1) {
+					printf("Elapsed:     %s\n",format_time(hp->elapsed,buff1));
+				} else {
+					time(&tt);
+					printf("Elapsed:     %s\n",format_time(
+					tt - hp->timestamp,buff1));
+				}
+
 				printf("User CPU:    %s\n",format_time(hp->user_time,buff1));
 				printf("System CPU:  %s\n", format_time(hp->sys_time,buff2));
+				if(hp->dir)
+					printf("Directory:   %s\n",hp->dir);
 
-				if(hp->code == CLD_EXITED)
-					printf("Exit Status: %d\n",hp->status);
+				if(hp->exit[0] == 'S' && hp->exit[1] == 'I')
+					printf("Killed by:   %s\n",hp->exit);
 				else
-					printf("Killed by:   %s\n",signal_names[hp->status]);
+					printf("Exit Status: %s\n",hp->exit);
 
 				printf("Command:     %s\n",hp->text);
 			} else {
@@ -342,94 +405,195 @@ char *arg;
 			}
 			return;
 		} else {
-			report_error("Unknown history option",arg,0,0);
-			return;
-		}
-	}
-
-	if(details == 0) {
-		printf(" Num Command\n");
-		for(i=0; i<HISTORY_SIZE; i++) {
-			h = history_next+i-1024;
-			if(h >= 0) {
-				hp = &(history[h%HISTORY_SIZE]);
-				if(hp->text) {
-					printf("%4d %s\n",h,hp->text);
-				}
-			}
-		}
-	} else {
-		/* Find widest time strings */
-		user_widest = 4;
-		sys_widest = 3;
-		exit_widest = 4;
-		for(i=0; i<HISTORY_SIZE; i++) {
-			h = history_next+i-1024;
-			if(h >= 0) {
-				hp = &(history[h%HISTORY_SIZE]);
-				if(hp->text) {
-					len = strlen(format_time(hp->user_time,buff1));
-					if(len > user_widest) user_widest = len;
-					len = strlen(format_time(hp->sys_time,buff2));
-					if(len > sys_widest) sys_widest = len;
-					if(hp->code != CLD_EXITED) {
-						if(strcmp(hp->time_end,"Running") == 0)
-							len = 7;
-						else
-							len = strlen(signal_names[hp->status]);
-						if(len > exit_widest) exit_widest = len;
-					}
-				}
-			}
-		}
-
-		printf("%4s %*s %*s %*s Command\n",
-			"Num",
-			user_widest, "User",
-			sys_widest, "Sys",
-			exit_widest, "Exit");
-
-		for(i=0; i<HISTORY_SIZE; i++) {
-			h = history_next+i-1024;
-			if(h >= 0) {
-				hp = &(history[h%HISTORY_SIZE]);
-				if(hp->text) {
-					if(hp->code == CLD_EXITED) {
-						if(hp->status == 0)
-							/* exited ok */
-							printf("%4d %*s %*s %*s %-40s\n",h,
-								user_widest, format_time(hp->user_time,buff1),
-								sys_widest, format_time(hp->sys_time,buff2),
-								exit_widest,"ok",
-								hp->text);
-						else
-							/* exited with error code */
-							printf("%4d %*s %*s %*d %-40s\n",h,
-								user_widest, format_time(hp->user_time,buff1),
-								sys_widest, format_time(hp->sys_time,buff2),
-								exit_widest,hp->status,
-								hp->text);
-					} else {
-						if(strcmp(hp->time_end,"Running") == 0)
-							/* still running */
-							printf("%4d %*s %*s %*s %-40s\n",h,
-								user_widest, format_time(hp->user_time,buff1),
-								sys_widest, format_time(hp->sys_time,buff2),
-								exit_widest,"Running",
-								hp->text);
-						else
-							/* killed */
-							printf("%4d %*s %*s %*s %-40s\n",h,
-								user_widest, format_time(hp->user_time,buff1),
-								sys_widest, format_time(hp->sys_time,buff2),
-								exit_widest,signal_names[hp->status],
-								hp->text);
-					}
-				}
+			if(arg[0] == '-') {
+				report_error("Unknown history option",arg,0,0);
+				return;
+			} else {
+				fmt = arg;
 			}
 		}
 	}
 
+	widths = (int *) malloc(sizeof(int)*strlen(fmt));
+
+	if(show_history_list(fmt,widths,1))
+		show_history_list(fmt,widths,0);
+	
+	free(widths);
+}
+
+show_history_list(fmt,widths,calculate)
+char *fmt;
+int *widths;
+int calculate;
+{
+	int details;
+	int i;
+	int h;
+	struct history_entry *hp;
+	char buff[256];
+	char buff1[32], buff2[32];
+	int len;
+	int field;
+	int fields;
+	char *pt;
+	char output[256];
+	int w;
+	time_t tt;
+
+	fields = strlen(fmt);
+
+	if(calculate) 
+		for(field=0; field<fields; field++) 
+			widths[field] = 0;
+
+	/* Header line */
+	output[0] = '\0';
+	for(field=0; field<fields; field++) {
+		switch(fmt[field]) {
+			case 'n':
+				pt = "Num";
+				break;
+			case 'c':
+			case 'C':
+				pt = "Command";
+				break;
+			case 'u':
+				pt = "User";
+				break;
+			case 's':
+				pt = "Sys";
+				break;
+			case 'e':
+				pt = "Elapsed";
+				break;
+			case 'x':
+				pt = "Exit";
+				break;
+			case 'd':
+			case 'D':
+				pt = "Directory";
+				break;
+			default:
+				report_error("Unknown history field",NULL,fmt[field],0);
+				return(0);
+		}
+		if(calculate) {
+			w = strlen(pt);
+			if(w > widths[field]) widths[field] = w;
+		} else {
+			cat_hist_output(fmt[field],widths[field],
+				output,pt);
+		}
+	}
+	if(!calculate) puts(output);
+
+
+	/* History entries */
+	for(h=0; history[h]; h++) {
+		hp = history[h];
+		if(hp->text) {
+			output[0] = '\0';
+			for(field=0; field<fields; field++) {
+				switch(fmt[field]) {
+					case 'n':
+						sprintf(buff,"%d",h);
+						pt = buff;
+						break;
+					case 'c':
+					case 'C':
+						pt = hp->text;
+						break;
+					case 'u':
+						format_time(hp->user_time,buff),
+						pt = buff;
+						break;
+					case 's':
+						format_time(hp->sys_time,buff),
+						pt = buff;
+						break;
+					case 'e':
+						if(hp->elapsed != -1) {
+							format_time(hp->elapsed,buff);
+							pt = buff;
+						} else {
+							time(&tt);
+							format_time(tt - hp->timestamp,buff);
+							pt = buff;
+						}
+						break;
+					case 'x': /* Exit status / signal / etc */
+						pt = hp->exit;
+						break;
+					case 'd':
+					case 'D':
+						pt = hp->dir;
+						break;
+				}
+				if(calculate) {
+					w = strlen(pt);
+					if(w > widths[field]) widths[field] = w;
+				} else {
+					cat_hist_output(fmt[field],widths[field],
+						output,pt);
+				}
+			}
+			if(!calculate) {
+				puts(output);
+			}
+		}
+	}
+
+	return(1);
+}
+
+cat_hist_output(f,w,out,pt)
+int f;
+int w;
+char *out;
+char *pt;
+{
+	char *output;
+
+	output = out+strlen(out);
+
+	if(out != output) {
+		*output++ = ' ';
+		*output = '\0';
+	}
+
+	switch(f) {
+		/* Left justified, any length: */
+		case 'c':
+			sprintf(output,"%s",pt);
+			break;
+		/* Left justified, limited to 20 char: */
+		case 'C':
+			if(w < 20)
+				sprintf(output,"%-*s",w,pt);
+			else
+				sprintf(output,"%-20.20s",pt);
+			break;
+		case 'D':
+			if(w < 20)
+				sprintf(output,"%-*s",w,pt);
+			else {
+				int len;
+				len = strlen(pt) - 20;
+				if(len < 0) len = 0;
+				sprintf(output,"%-20.20s",pt+len);
+			}
+			break;
+		/* Left justified: */
+		case 'd':
+		case 'x': 
+			sprintf(output,"%-*s",w,pt);
+			break;
+		/* Right justified */
+		default:
+			sprintf(output,"%*s",w,pt);
+			break;
+	}
 }
 
 
@@ -438,10 +602,6 @@ clock_t t;
 char *buff;
 {
 	int sec, min, hour, days;
-
-	/*
-	printf("%d\n",t);
-	*/
 
 	sec = t%60;
 	t = t/60;
@@ -469,34 +629,109 @@ struct command *command;
 	int i;
 	int h;
 	int len;
+	int text_dir, text_command, text_num;
+	char *arg;
+
+	text_dir = text_command = text_num = 0;
 
 	pt = command->words->word+1;
-	len = strlen(pt);
+
+	arg = index(pt,'.');
+	if(arg) {
+		*arg++ = '\0';
+		if(strcmp(arg,"dir") == 0) {
+			text_dir = 1;
+		} else if(strcmp(arg,"text") == 0) {
+			text_command = 1;
+		} else if(strcmp(arg,"num") == 0) {
+			text_num = 1;
+		} else {
+			report_error("History argument unknown",arg,0,0);
+			return(NULL);
+		}
+	}
+
+	h = find_history(pt);
+
+	if(h == -1) {
+		return(NULL);
+	}
+
+	if(text_dir) {
+		command->echo_text = dup_history_dir(h);
+		return(command);
+	}
+
+	if(text_command) {
+		command->echo_text = strdup(history[h]->text);
+		return(command);
+	}
+
+	if(text_num) {
+		char *tmp;
+		tmp = malloc(16);
+		sprintf(tmp,"%d",h);
+		command->echo_text = tmp;
+		return(command);
+	}
+
+	text = history[h]->text;
+	if(text) {
+		command = parse_string(command,text);
+		if(show_history_sub) 
+			command->display_text = 1;
+	}
+	return(command);
+}
+
+find_history(pt)
+char *pt;
+{
+	char *text;
+	int i;
+	int h;
+	int len;
+	int anywhere, j;
 
 	if(isdigit(pt[0])) {
 		h = atoi(pt);
-		text = history[h%HISTORY_SIZE].text;
-		if(text) {
-			command = parse_string(command,text);
-			if(show_history_sub) 
-				command->display_text = 1;
-			return(command);
+		for(i=0; history[i]; i++) ;
+		if(h >= i) {
+			report_error("History entry out of bounds",pt,0,0);
+			return(-1);
 		}
+		return(h);
 	}
 
-	for(i=HISTORY_SIZE-1; i>=0; i--) {
-		h = history_next+i;
-		text = history[h%HISTORY_SIZE].text;
-		if(text) {
-			if(strncmp(pt,text,len) == 0) {
-				command = parse_string(command,text);
-				if(show_history_sub) 
-					command->display_text = 1;
-				return(command);
-			}
-		}
+	if(pt[0] == '*') { /* Match pattern anywhere in history string */
+		anywhere = 1;
+		*pt = '\0';
+		pt++;
+	} else {
+		anywhere = 0;
 	}
-	return(command);
+	
+
+	len = strlen(pt);
+
+	for(h=0; history[h]; h++) ;
+
+	h--;
+
+	while(h >= 0) {
+		text = history[h]->text;
+		if(anywhere) {
+			for(j=0; text[j]; j++)
+				if(strncmp(pt,text+j,len) == 0)
+					return(h);
+		} else {
+			if(strncmp(pt,text,len) == 0) 
+				return(h);
+		}
+		h--;
+	}
+	report_error("History entry not found",pt,0,0);
+	return(-1);
 }
 
 struct command *parse_string(command,text)
@@ -525,5 +760,38 @@ update_history_setting(str)
 char *str;
 {
 	show_history_sub = atoi(str);
+}
+
+char *dup_history_dir(h) 
+int h;
+{
+	return(strdup(history[h]->dir));
+}
+
+set_exit_status(hp,code,status)
+struct history_entry *hp;
+int code,status;
+{
+	char *pt;
+
+	pt = hp->exit;
+
+	if(code == CLD_EXITED) {
+		if(status == 0) {
+			strcpy(pt,"ok");
+		} else {
+			sprintf(pt,"%d",status);
+		}
+	} else {
+		if(strcmp(hp->time_end,"Running") != 0)
+			strcpy(pt,signal_names[status]);
+	}
+}
+
+change_history_status(h,status)
+int h;
+char *status;
+{
+	strcpy(history[h]->exit,status);
 }
 

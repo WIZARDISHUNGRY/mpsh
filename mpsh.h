@@ -94,22 +94,23 @@ struct word_list {
 } ;
 
 struct command {
-	char *text;
-	struct word_list *words;
+	char *text;		/* command text for display, history */
+	char *dir;		/* cwd before command executes, for history */
+	char *echo_text;	/* for history field display */
+	struct word_list *words;	/* command & args */
 	struct word_list *handler_args;
-	struct word_list *path;
 	int flags;
 	int nice;
 	int pipe_io_flags;
 	int file_io_flags;
-	int smp_num;
-	int smp_id;
-	char display_text;
+	int smp_num;		/* number of processes to generate */
+	int smp_id;			/* id so they all find the same history entry */
+	char display_text;	/* boolean: display history sub notice? */
 	char job_handler;
 	pid_t pid;
 	struct word_list *stderr_filename;
 	struct word_list *stdout_filename;
-	struct command *pipeline;
+	struct command *pipeline;	/* next command in sequence */
 	/* Parsing */
 	char state;
 	char ch;
@@ -133,17 +134,21 @@ struct command *init_command();
 struct command *expand_history();
 struct command *parse_string();
 
+char *dup_history_dir();
+
+
 
 
 char *get_env();
 char *words_to_string();
-struct word_list *find_path();
+char *find_path();
 
 char *read_from_command();
 char *get_prompt();
 struct word_list *words_from_command();
 
 char *end_of_string();
+char *dup_cwd();
 
 
 extern int control_term;
