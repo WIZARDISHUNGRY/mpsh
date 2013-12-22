@@ -200,9 +200,6 @@ struct command *init_command() {
 	new = (struct command *) malloc(sizeof(struct command));
 	new->text = NULL;
 	new->dir = NULL;
-	/*
-	new->path = NULL;
-	*/
 	new->echo_text = NULL;
 	new->words = NULL;
 	new->flags = 0x0000;

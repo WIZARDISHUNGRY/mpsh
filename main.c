@@ -108,7 +108,7 @@ char *env[];
 #ifdef READLINE
 	while(line = readline(pr=get_prompt())) {
 		free(pr);
-		parse_and_run(line,INTERACTIVE);
+		parse_and_run(line,INTERACTIVE,WAIT_FOR_JOB);
 	}
 #else
 	for(;;) {
@@ -116,15 +116,16 @@ char *env[];
 		printf("%s",pr);
 		free(pr);
 		if(!gets(line)) break;
-		parse_and_run(line,INTERACTIVE);
+		parse_and_run(line,INTERACTIVE,WAIT_FOR_JOB);
 	}
 #endif
 
 }
 
-parse_and_run(text_command,interactive)
+parse_and_run(text_command,interactive,wait_for_exit)
 char *text_command;
 int interactive;
+int wait_for_exit;
 {
 	char *pt;
 	struct command *command;
@@ -181,8 +182,10 @@ int interactive;
 
 	skip:
 
-
-	/* LOG & CLEAN UP DATA */
+	/*
+	if(wait_for_exit) 
+	*/
+	
 	check_for_job_exit();
 
 	free_command(initial_command);

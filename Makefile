@@ -1,7 +1,7 @@
 # Specify your operating system:
 # (Use BSD for OSX.)
-#OS=Solaris
-OS=LINUX
+OS=Solaris
+#OS=LINUX
 #OS=IRIX
 #OS=BSD
 

@@ -637,7 +637,7 @@ struct command *command;
 	pt = command->words->word+1;
 
 	arg = index(pt,'.');
-	if(arg) {
+	if(arg && arg[1] != '/') {
 		*arg++ = '\0';
 		if(strcmp(arg,"dir") == 0) {
 			text_dir = 1;

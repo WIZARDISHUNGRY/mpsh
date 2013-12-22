@@ -163,3 +163,5 @@ extern int control_term;
 #define INTERACTIVE 1
 #define NONINTERACTIVE 0
 
+#define WAIT_FOR_JOB 1
+#define DONT_WAIT 0

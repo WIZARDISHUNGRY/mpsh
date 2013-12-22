@@ -1,0 +1,16 @@
+# mpsh login script
+
+
+# Set path depending on node.
+test -f .mpsh.(hostname) ;? . .mpsh.(hostname)
+
+setenv EDITOR=vi
+
+setenv mpsh-umask=022
+
+
+echo Welcome to (hostname)
+echo
+cat /etc/motd
+echo
+

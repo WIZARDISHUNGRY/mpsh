@@ -253,6 +253,7 @@ int pipe_in, pipe_out;
 		/* Pipes */
 		if(pipe_in != -1) {
 			dup2(pipe_in,fileno(stdin));
+			close(pipe_in);
 		}
 
 		if(pipe_out != -1) {
@@ -267,6 +268,7 @@ int pipe_in, pipe_out;
 				if(pipe_out != -1)
 					dup2(pipe_out,fileno(stdout));
 			}
+			close(pipe_out);
 		}
 
 		/* Set operators */
@@ -318,10 +320,10 @@ int pipe_in, pipe_out;
 			pt = command->words->word+1;
 			pt[strlen(pt)-1] = '\0';
 			if(command->flags & FLAG_BACK)
-				parse_and_run(pt,NONINTERACTIVE);
+				parse_and_run(pt,NONINTERACTIVE,DONT_WAIT);
 			else
-				parse_and_run(pt,INTERACTIVE);
-			_exit(0);
+				parse_and_run(pt,INTERACTIVE,DONT_WAIT);
+			exit(0);
 		}
 
 		if(command->echo_text) {
@@ -348,8 +350,11 @@ int pipe_in, pipe_out;
 		command->pid = pid;
 	}
 
-	free(call_argv);
-	free(call_env);
+	if(!command->echo_text) {
+		free(call_argv);
+		free(call_env);
+		if(path) free(path);
+	}
 	return(1);
 }
 
@@ -474,7 +479,7 @@ char *text, *comm;
 	if(pid == 0) { /* child. */
 		dup2(pipes[0],fileno(stdin));
 		close(pipes[1]);
-		parse_and_run(comm,NONINTERACTIVE);
+		parse_and_run(comm,NONINTERACTIVE,DONT_WAIT);
 		_exit(1);
 	} else { /* Parent process */
 		close(pipes[0]);
@@ -520,12 +525,13 @@ char *text_command;
 	pid = fork();
 	if(pid == 0) { /* child. */
 		dup2(pipes[1],fileno(stdout));
+		close(pipes[1]);
 		close(pipes[0]);
 		/*
 		devnull = open("/dev/null",O_WRONLY);
 		dup2(devnull,fileno(stdin));
 		*/
-		parse_and_run(text_command,NONINTERACTIVE);
+		parse_and_run(text_command,NONINTERACTIVE,DONT_WAIT);
 		_exit(1);
 	} else { /* Parent process */
 		close(pipes[1]);
@@ -573,7 +579,7 @@ char *text_command;
 		devnull = open("/dev/null",O_WRONLY);
 		dup2(devnull,fileno(stdin));
 		*/
-		parse_and_run(text_command,NONINTERACTIVE);
+		parse_and_run(text_command,NONINTERACTIVE,DONT_WAIT);
 		_exit(1);
 	} else { /* Parent process */
 		close(pipes[1]);

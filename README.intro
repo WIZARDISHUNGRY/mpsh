@@ -1,6 +1,6 @@
 							 Introduction
 
-INTRODUCTION TO MPSH (Version 1.2, 2013-12-17)
+INTRODUCTION TO MPSH (Version 1.2.1, 2013-12-22)
 
 mpsh is an experimental command interpreter for Unix systems written
 by Dave Fischer at the Center for Computational Aesthetics and
@@ -115,9 +115,6 @@ question of sophisticated language features.
 The primary mpsh development machine is a Sun E3500 running Solaris 8.
 (In 2013. Really.) Porting is done on an Origin-2000, a Raspberry Pi,
 and an assortment of laptops.
-
-The difficulty of downloading gcc binaries without two gig of "xcode"
-stuff I don't want has thus far prevented an OSX port.
 
 							 Job Handlers
 

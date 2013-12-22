@@ -122,7 +122,7 @@ char *env[];
 	}
 
 	if(strcmp(argv[1],"-c") == 0) {
-		parse_and_run(argv[2],INTERACTIVE);
+		parse_and_run(argv[2],INTERACTIVE,WAIT_FOR_JOB);
 		exit(0);
 	}
 
@@ -158,7 +158,7 @@ int quiet;
 	while(fgets(buff,BUFF_SIZE,fp) != NULL) {
 		len = strlen(buff);
 		if(len > 0) buff[len-1] = '\0';
-		if(buff[0]) parse_and_run(buff,NONINTERACTIVE);
+		if(buff[0]) parse_and_run(buff,NONINTERACTIVE,WAIT_FOR_JOB);
 	}
 
 	fclose(fp);
