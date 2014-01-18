@@ -106,32 +106,65 @@ char *env[];
 
 
 #ifdef READLINE
-	while(line = readline(pr=get_prompt())) {
+	for(;;) {
+		parse_depth = 0;
+		if(line = readline(pr=get_prompt())) {
+			parse_and_run(line,INTERACTIVE,NORMAL_JOB);
+		} else {
+			/* EOF */
+			if(number_of_jobs() > 0 ) {
+				puts("");
+				show_jobs();
+			} else {
+				if(strcmp(get_env("mpsh-eof-exit"),"1") == 0) 
+					exit(0);
+				else
+					puts("");
+			}
+		}
 		free(pr);
-		parse_and_run(line,INTERACTIVE,WAIT_FOR_JOB);
 	}
+
 #else
 	for(;;) {
+		parse_depth = 0;
 		pr = get_prompt();
 		printf("%s",pr);
 		free(pr);
-		if(!gets(line)) break;
-		parse_and_run(line,INTERACTIVE,WAIT_FOR_JOB);
+		if(gets(line)) {
+			parse_and_run(line,INTERACTIVE,NORMAL_JOB);
+		} else {
+			/* EOF */
+			if(number_of_jobs() > 0 ) {
+				puts("");
+				show_jobs();
+			} else {
+				if(strcmp(get_env("mpsh-eof-exit"),"1") == 0) 
+					exit(0);
+				else
+					puts("");
+			}
+		}
 	}
 #endif
 
 }
 
-parse_and_run(text_command,interactive,wait_for_exit)
+parse_and_run(text_command,interactive,job_type)
 char *text_command;
 int interactive;
-int wait_for_exit;
+int job_type;
 {
 	char *pt;
 	struct command *command;
 	struct command *initial_command;
+	struct command *c;
 	int ret;
 
+	if(parse_depth++ > MAX_PARSE_DEPTH) {
+		report_error("Excessive parse depth",NULL,0,0);
+		return(-1);
+	}
 
 	/* Init parse tree structs */
 	command = initial_command = init_command();
@@ -158,35 +191,37 @@ int wait_for_exit;
 		shift_set_operators(initial_command);
 		expand_globbing(initial_command);
 		expand_job_num(initial_command);
-		expand_env(initial_command);
-		/*
-		expand_alias(initial_command);
+		if(!expand_env(initial_command)) goto skip;
+
+		/* This goes in the last command struct in the pipeline,
+		   rather than the first, because of the job entry mechanism.
 		*/
-		ret = expand_mp(initial_command);
+		command->expansion = get_command_expansion(initial_command);
 
-		if(ret) {
-			/* DEBUG */
-			/*
-			display_command(initial_command);
-			*/
+		if(!expand_mp(initial_command)) goto skip;
 
-			if(command->display_text && interactive)
-				puts(initial_command->text);
+		/* DEBUG */
+		/*
+		display_command(initial_command);
+		*/
 
-			command->dir = dup_cwd();
+		if(command->display_text && interactive)
+			puts(initial_command->text);
 
-			/* EXECUTE COMMAND */
-			exec_command(initial_command);
-		}
+		/* Save this info for history, before exec command */
+		command->dir = dup_cwd();
+
+		if(job_type == GROUP_JOB)
+			for(c = initial_command; c; c=c->pipeline)
+				c->flags |= FLAG_NOTERM;
+
+		/* EXECUTE COMMAND */
+		exec_command(initial_command);
 	}
 
-	skip:
-
-	/*
-	if(wait_for_exit) 
-	*/
-	
 	check_for_job_exit();
+
+	skip:
 
 	free_command(initial_command);
 

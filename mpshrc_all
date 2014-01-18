@@ -21,18 +21,19 @@ setenv handler-d="!dc"
 setenv handler-b="!rsh desktop xcb -s 0 -display $DISPLAY"
 
 # alias env variables:
-# (second versions includes substitutions)
 # This gives behaviour similar to bash's "!$" with "$!".
-# Which is confusing, admittedly.
-#setenv !="!history | tail -1 | sed 's/.* //'"
-setenv !="!echo (history | tail -1 | sed 's/.* //')"
+# Using "text" vs "parsed" gives different results if that last word
+# is a wildcard or env variable, etc.
+#setenv !="!!.text | sed 's/.* //'"
+setenv !="!!.parsed | sed 's/.* //'"
 
 # $x reads the X Windows buffer.
-setenv x="!rsh desktop xcb -p 0 -display $DISPLAY"
+# Uncomment and tweak first version for remote use.
+#setenv x="!rsh desktop xcb -p 0 -display $DISPLAY"
+setenv x="!xcb -p 0"
 
 setenv YY="!date +%Y-%m-%d"
 setenv CWD="!pwd"
-setenv HOST="!hostname"
 
 
 # Internal mpsh settings:
@@ -41,13 +42,15 @@ setenv mpsh-history=1
 setenv mpsh-cdhistory=1
 # Max error reporting
 setenv mpsh-error-level=3
-
 # Adjust history display formats as desired:
 setenv mpsh-hist-disp=nc
 setenv mpsh-hist-disp-l=ndxuec
 
 # prompt
-setenv mpsh-prompt="!echo (date '+%l:%M') $HOST 'mpsh% '"
+setenv mpsh-prompt="!echo (date '+%M') "(hostname)" 'mpsh% '"
 
+
+# aliases
+alias F="fg %-"
 
 

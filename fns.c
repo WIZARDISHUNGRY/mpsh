@@ -195,10 +195,33 @@ int ch;
 	w->word[len+1] = 0;
 }
 
+append_string_to_word(w,str)
+struct word_list *w;
+char *str;
+{
+	char *tmp;
+	int len;
+
+	if(!str[0]) return;
+
+	len = strlen(w->word) + strlen(str);
+	if((len+1) >= w->space) {
+		while((len+1) >= w->space)
+			w->space += WORD_ALLOC;
+		tmp = (char *) malloc(w->space);
+		strcpy(tmp,w->word);
+		free(w->word);
+		w->word = tmp;
+	}
+
+	strcat(w->word,str);
+}
+
 struct command *init_command() {
 	struct command *new;
 	new = (struct command *) malloc(sizeof(struct command));
 	new->text = NULL;
+	new->expansion = NULL;
 	new->dir = NULL;
 	new->echo_text = NULL;
 	new->words = NULL;
@@ -312,3 +335,38 @@ char *dup_cwd() {
 	return(pt);
 }
 
+char *get_command_expansion(command)
+struct command *command;
+{
+	struct command *curr;
+	struct word_list *w;
+	char *dest;
+	int len;
+
+	len = 0;
+	for(curr=command; curr; curr=curr->pipeline) {
+		for(w = curr->words; w; w=w->next) {
+			len += strlen(w->word)+1;
+		}
+		len += 2;
+	}
+
+	dest = (char *) malloc(len);
+	dest[0] = '\0';
+
+	len = 0;
+	for(curr=command; curr; curr=curr->pipeline) {
+		for(w = curr->words; w; w=w->next) {
+			if(dest[0]) strcat(dest," ");
+			strcat(dest,w->word);
+		}
+		if(curr->pipeline) {
+			if(curr->flags & FLAG_PIPE) 
+				strcat(dest,"|");
+			else
+				strcat(dest,";");
+		}
+	}
+
+	return(dest);
+}

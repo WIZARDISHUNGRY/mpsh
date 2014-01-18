@@ -75,6 +75,7 @@ history.c:
 
 struct history_entry {
 	char *text;
+	char *expansion;
 	char *dir;
 	char exit[16];
 	time_t user_time;
@@ -112,17 +113,40 @@ init_history() {
 
 clear_history() {
 	int i;
+	int tmp_entry;
+	int jobs;
 	struct history_entry *hp;
+	struct history_entry **hist_tmp;
+
+	jobs = number_of_jobs();
+	hist_tmp = (struct history_entry **) 
+		malloc(sizeof(struct history_entry *)*jobs);
+	tmp_entry = 0;
 
 	for(i=0; history[i]; i++) {
-		hp = history[i];
-		free(hp->text);
-		free(hp->dir);
-		free(hp);
+		/* Any history entry for a jobs that's still running
+		   must be saved via the hist_tmp array.
+		*/
+		if(hist_entry_live(i)) {
+			hist_tmp[tmp_entry] = history[i];
+			change_history_index(i,tmp_entry);
+			tmp_entry++;
+		} else {
+			hp = history[i];
+			free(hp->text);
+			free(hp->expansion);
+			free(hp->dir);
+			free(hp);
+		}
 		history[i] = NULL;
 	}
 
 	init_history();
+
+	/* Copy back temp array, if any */
+	for(tmp_entry=0; tmp_entry<jobs; tmp_entry++)
+		history[tmp_entry] = hist_tmp[tmp_entry];
+
 }
 
 int add_history_entry(command)
@@ -150,6 +174,7 @@ struct command *command;
 	h = history[hist];
 
 	h->text = command->text;
+	h->expansion = command->expansion;
 	h->dir = command->dir;
 	strcpy(h->exit,"Running");
 	h->user_time = h->sys_time = 0L;
@@ -206,6 +231,7 @@ struct command *command;
 	h = history[hist];
 
 	h->text = command->text;
+	h->expansion = command->expansion;
 	h->dir = command->dir;
 	strcpy(h->exit,"ok");
 	h->user_time = h->sys_time = 0L;
@@ -467,6 +493,9 @@ int calculate;
 			case 'e':
 				pt = "Elapsed";
 				break;
+			case 't':
+				pt = "Started";
+				break;
 			case 'x':
 				pt = "Exit";
 				break;
@@ -521,6 +550,10 @@ int calculate;
 							format_time(tt - hp->timestamp,buff);
 							pt = buff;
 						}
+						break;
+					case 't':
+						sprintf(buff,"%.8s",hp->time_start+11);
+						pt = buff;
 						break;
 					case 'x': /* Exit status / signal / etc */
 						pt = hp->exit;
@@ -630,9 +663,15 @@ struct command *command;
 	int h;
 	int len;
 	int text_dir, text_command, text_num;
+	int text_parsed;
 	char *arg;
 
-	text_dir = text_command = text_num = 0;
+	if(parse_depth++ > MAX_PARSE_DEPTH) {
+		report_error("Excessive parse depth",NULL,0,0);
+		return(NULL);
+	}
+
+	text_dir = text_command = text_num = text_parsed = 0;
 
 	pt = command->words->word+1;
 
@@ -643,6 +682,8 @@ struct command *command;
 			text_dir = 1;
 		} else if(strcmp(arg,"text") == 0) {
 			text_command = 1;
+		} else if(strcmp(arg,"parsed") == 0) {
+			text_parsed = 1;
 		} else if(strcmp(arg,"num") == 0) {
 			text_num = 1;
 		} else {
@@ -664,6 +705,11 @@ struct command *command;
 
 	if(text_command) {
 		command->echo_text = strdup(history[h]->text);
+		return(command);
+	}
+
+	if(text_parsed) {
+		command->echo_text = strdup(history[h]->expansion);
 		return(command);
 	}
 
@@ -734,28 +780,6 @@ char *pt;
 	return(-1);
 }
 
-struct command *parse_string(command,text)
-struct command *command;
-char *text;
-{
-	int state;
-	char *str;
-	struct command *ret;
-
-	command->words = NULL;
-	command->text[0] = '\0';
-	command->state = STATE_SPACE;
-	for(str=text; *str; str++) {
-		add_command_text_letter(command,*str);
-		ret = parse_char(command,*str);
-		if(!ret) return(0);
-		command = ret;
-	}
-	add_command_text_letter(command,' ');
-	command = parse_char(command,' ');
-	return(command);
-}
-
 update_history_setting(str)
 char *str;
 {
@@ -794,4 +818,5 @@ char *status;
 {
 	strcpy(history[h]->exit,status);
 }
+
 

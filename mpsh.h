@@ -59,6 +59,8 @@ mpsh.h
 #define FLAG_NEGCOND	0x0040
 #define FLAG_NICE		0x0080
 #define FLAG_SMP_SYM	0x0100
+#define FLAG_GROUP		0x0200
+#define FLAG_NOTERM		0x0400
 
 #define FLAG_SETOP				0xFF0000
 #define FLAG_SETOP_UNION		0x010000
@@ -95,6 +97,7 @@ struct word_list {
 
 struct command {
 	char *text;		/* command text for display, history */
+	char *expansion; /* command text, fully parsed */
 	char *dir;		/* cwd before command executes, for history */
 	char *echo_text;	/* for history field display */
 	struct word_list *words;	/* command & args */
@@ -124,6 +127,7 @@ extern struct word_list *global_env;
 extern struct word_list *search_path;
 
 struct command *parse_char();
+struct command *parse_char_limited();
 struct word_list *init_word();
 struct word_list *init_word_str();
 struct word_list *find_last_word();
@@ -133,6 +137,8 @@ struct word_list *new_arg_word();
 struct command *init_command();
 struct command *expand_history();
 struct command *parse_string();
+struct command *insert_parse_string();
+
 
 char *dup_history_dir();
 
@@ -146,9 +152,13 @@ char *find_path();
 char *read_from_command();
 char *get_prompt();
 struct word_list *words_from_command();
+char *get_command_expansion();
+
 
 char *end_of_string();
 char *dup_cwd();
+
+char *find_alias();
 
 
 extern int control_term;
@@ -163,5 +173,11 @@ extern int control_term;
 #define INTERACTIVE 1
 #define NONINTERACTIVE 0
 
-#define WAIT_FOR_JOB 1
-#define DONT_WAIT 0
+#define NORMAL_JOB 0
+#define GROUP_JOB 1
+
+
+int parse_depth;
+#define MAX_PARSE_DEPTH 32
+
+

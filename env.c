@@ -91,6 +91,7 @@ struct internal_variables int_vars[] = {
 	"mpsh-nice=",			"10",			update_nice,
 	"mpsh-hist-disp=",		"nc",			update_null,
 	"mpsh-hist-disp-l=",	"nusxc",		update_null,
+	"mpsh-eof-exit=",		"1",			update_null,
 	NULL, NULL, NULL
 } ;
 
@@ -244,7 +245,7 @@ char *arg;
 	struct stat st;
 	char buff[256];
 
-	if(arg[0] == '[') {
+	if(!arg[0] || arg[0] == '[') {
 		return(NULL);
 	}
 
@@ -409,7 +410,7 @@ expand_env(curr)
 struct command *curr;
 {
 	struct word_list *w;
-	char buff[64];
+	char buff[256];
 	char *val;
 	char *pt;
 	int i, len;
@@ -427,7 +428,7 @@ struct command *curr;
 				if(*pt == '$') {
 					/* Expand env variable. */
 					len = strlen(pt+1);
-					for(i=1; i<=len; i++) {
+					for(i=len; i; i--) {
 						strncpy(buff,pt+1,i);
 						buff[i] = '\0';
 						val = get_env(buff);
@@ -437,16 +438,10 @@ struct command *curr;
 								free(val);
 								val = tmp;
 							}
-							new = (char *) malloc(1024);
-							/* First part of original string */
 							*pt = '\0';
-							strcpy(new,orig);
-							strcat(new,val);
-							strcat(new,pt+1+i);
-							string_to_word(new,&w);
-							free(new);
-							free(val);
+							if(!insert_parse(curr,w,val,pt+1+i)) return(0);
 							break;
+
 						}
 					}
 				}
@@ -455,6 +450,7 @@ struct command *curr;
 		}
 		curr = curr->pipeline;
 	}
+	return(1);
 }
 
 /* Is this environment variable for children, or just internal? */
@@ -591,5 +587,46 @@ update_null(str)
 char *str;
 {
 	;
+}
+
+insert_parse(curr,w,str,str2)
+struct command *curr;
+struct word_list *w;
+char *str, *str2;
+{
+	struct word_list *save_args;
+	struct command *further_commands;
+	struct word_list *last;
+	char *append;
+	int flags;
+	int pipe_flags;
+
+	append = strdup(str2);
+
+	/* Save args & pipeline for appending later. */
+	save_args = w->next;
+	w->next = NULL;
+	further_commands = curr->pipeline;
+	curr->pipeline = NULL;
+	flags = curr->flags;
+	pipe_flags = curr->pipe_io_flags;
+
+	curr = insert_parse_string(curr,str);
+	if(!curr) return(0);
+
+	last = find_last_word(&curr->words);
+	append_string_to_word(last,append);
+	free(append);
+
+	while(curr->pipeline) curr = curr->pipeline;
+	curr->pipeline = further_commands;
+	curr->flags = flags;
+	curr->pipe_io_flags = pipe_flags;
+	while(curr->pipeline) curr = curr->pipeline;
+
+	last = find_last_word(&curr->words);
+	last->next = save_args;
+
+	return(1);
 }
 

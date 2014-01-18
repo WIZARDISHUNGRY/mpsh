@@ -3,7 +3,7 @@ BUILDING AND INSTALLING MPSH
 
 Building mpsh
 
-	1. Edit the Makefile to specify your operating system, and compiler.
+	1. Edit the Makefile to specify your operating system and compiler.
 
 	2. type: make
 
@@ -11,6 +11,9 @@ Building mpsh
 
 		readline
 		curses
+
+	(There are two lines to comment out in the Makefile if you don't
+	want to use readline.)
 
 
 Installing mpsh

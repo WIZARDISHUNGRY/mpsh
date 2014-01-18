@@ -83,6 +83,7 @@ struct job {
 	int smp_id;
 	int smp;
 	int last_fg;
+	int group;
 } ;
 
 
@@ -101,6 +102,7 @@ init_jobs() {
 		jobs[i].pids = NULL;
 		jobs[i].smp_id = 0;
 		jobs[i].last_fg = 0;
+		jobs[i].group = 0;
 	}
 
 	current_job_pid = -1;
@@ -112,7 +114,7 @@ struct command *command;
 {
 	int j;
 
-	if(command->flags&FLAG_BATCH) return(-1);
+	if(command->flags & FLAG_BATCH) return(-1);
 
 	for(j=0; j<JOB_ENTRIES; j++) {
 		if(jobs[j].pid == 0) goto found_slot;
@@ -129,6 +131,12 @@ struct command *command;
 	jobs[j].running = 1;
 	jobs[j].last_fg = 0;
 	jobs[j].smp = command->smp_num;
+
+
+	if(command->flags & FLAG_NOTERM)
+		jobs[j].group = 1;
+	else
+		jobs[j].group = 0;
 
 	return(j);
 }
@@ -237,7 +245,8 @@ int job;
 
 	signal(SIGTTIN,SIG_IGN);
 	signal(SIGTTOU,SIG_IGN);
-	tcsetpgrp(control_term,getpgrp());
+	if(!jobs[job].group)
+		tcsetpgrp(control_term,getpgrp());
 
 	current_job_pid = -1;
 
@@ -352,7 +361,8 @@ int job;
 
 	signal(SIGTTIN,SIG_IGN);
 	signal(SIGTTOU,SIG_IGN);
-	tcsetpgrp(control_term,getpgrp());
+	if(!jobs[job].group)
+		tcsetpgrp(control_term,getpgrp());
 
 	current_job_pid = -1;
 
@@ -584,9 +594,11 @@ find_bg_job() {
 	found = -1;
 
 	for(j=0; j<JOB_ENTRIES; j++) {
-		if(jobs[j].last_fg > 0 && jobs[j].last_fg < lowest) {
-				lowest = jobs[j].last_fg;
-				found = j;
+		if(jobs[j].pid != 0) {
+			if(jobs[j].last_fg > 0 && jobs[j].last_fg < lowest) {
+					lowest = jobs[j].last_fg;
+					found = j;
+			}
 		}
 	}
 
@@ -604,13 +616,15 @@ get_second_bg_job() {
 	found = -1;
 
 	for(j=0; j<JOB_ENTRIES; j++) {
-		if(
-			jobs[j].last_fg > 0 &&
-			jobs[j].last_fg < lowest &&
-			j != default_bg_job
-		) {
-				lowest = jobs[j].last_fg;
-				found = j;
+		if(jobs[j].pid != 0) {
+			if(
+				jobs[j].last_fg > 0 &&
+				jobs[j].last_fg < lowest &&
+				j != default_bg_job
+			) {
+					lowest = jobs[j].last_fg;
+					found = j;
+			}
 		}
 	}
 
@@ -619,4 +633,49 @@ get_second_bg_job() {
 	else
 		return(-1);
 }
+
+number_of_jobs() {
+	int j;
+	int count;
+
+	count = 0;
+
+	for(j=0; j<JOB_ENTRIES; j++) {
+		if(jobs[j].pid != 0 || jobs[j].pids != NULL) {
+			count++;
+		}
+	}
+
+	return(count);
+}
+
+hist_entry_live(hist)
+int hist;
+{
+	int j;
+
+	for(j=0; j<JOB_ENTRIES; j++) {
+		if(jobs[j].pid != 0 || jobs[j].pids != NULL) {
+			if(jobs[j].history == hist) return(1);
+		}
+	}
+
+	return(0);
+}
+
+change_history_index(original,new)
+int original, new;
+{
+	int j;
+
+	for(j=0; j<JOB_ENTRIES; j++) {
+		if(jobs[j].pid != 0 || jobs[j].pids != NULL) {
+			if(jobs[j].history == original) {
+				jobs[j].history = new;
+				return;
+			}
+		}
+	}
+}
+
 

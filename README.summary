@@ -56,3 +56,24 @@ Command grouping:
 
 	[ command [args] ]
 
+Command history:
+
+	!command
+	!*arg
+	![n]
+	!
+
+Command history fields:
+
+	!command.field
+	!*arg.field
+	![n].field
+	!.field
+
+where field is one of:
+
+	text
+	parsed
+	dir
+	num
+

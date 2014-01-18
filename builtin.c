@@ -78,13 +78,14 @@ int builtin_set();
 int builtin_exit();
 int builtin_clear();
 int builtin_show();
+int builtin_alias();
 
 struct builtins builtin_fns_parent[] = {
 	"fg",		builtin_fg,
 	"wait",		builtin_wait,
 	".",		builtin_source,
-	/* "mpsh-clear", builtin_clear, */
 	"exit",		builtin_exit,
+	"alias",	builtin_alias,
 	/* Either parent or child: */
 	"history",	builtin_hist,
 	"cd",		builtin_cd,
@@ -94,7 +95,6 @@ struct builtins builtin_fns_parent[] = {
 
 struct builtins builtin_fns_child[] = {
 	"jobs",		builtin_jobs,
-	/* "mpsh-show", builtin_show, */
 	"{",		builtin_set,
 	/* Either parent or child: */
 	"history",	builtin_hist,

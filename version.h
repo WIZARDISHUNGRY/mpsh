@@ -1,1 +1,1 @@
-#define mpsh_version "mpsh 1.2.1 2013-12-22"
+#define mpsh_version "mpsh 1.3.0 2014-1-17"

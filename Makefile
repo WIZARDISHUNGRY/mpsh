@@ -17,7 +17,7 @@ CC=gcc
 
 OBJECTS=main.o parse.o fns.o glob.o prompt.o debug.o exec.o env.o jobs.o \
 		builtin.o history.o signals.o chdir.o init.o set-theory.o \
-		error.o
+		error.o alias.o scripts.o
 
 
 mpsh: $(OBJECTS)
@@ -71,4 +71,9 @@ set-theory.o: set-theory.c mpsh.h
 error.o: error.c mpsh.h
 	$(CC) -D$(OS) $(READLINE) -c error.c
 
+alias.o: alias.c mpsh.h
+	$(CC) -D$(OS) $(READLINE) -c alias.c
+
+scripts.o: scripts.c mpsh.h
+	$(CC) -D$(OS) $(READLINE) -c scripts.c
 

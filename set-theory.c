@@ -307,6 +307,7 @@ struct word_list **dest1, **dest2;
 	/* Removes setop args, pipeline settings, etc */
 	c = init_command(src);
 	c->words = src->words;
+	c->flags |= src->flags & FLAG_GROUP;
 
 	*dest1 = w = init_word();
 
@@ -419,7 +420,6 @@ struct word_list *set;
 	for(w=set; w; w=w->next) {
 		if(w->word[0]) puts(w->word);
 	}
-
 }
 
 

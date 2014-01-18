@@ -187,10 +187,12 @@ int pipe_in, pipe_out;
 		/* Process group stuff. */
 
 		if((command->flags & FLAG_BACK) == 0x00) {
-			pgrp = getpid();
-			setpgid(pgrp,pgrp);
 			signal(SIGTTOU,SIG_IGN);
-			tcsetpgrp(control_term,pgrp);
+			if(!(command->flags & FLAG_NOTERM)) {
+				pgrp = getpid();
+				setpgid(pgrp,pgrp);
+				tcsetpgrp(control_term,pgrp);
+			}
 		} else {
 			/*
 			close(fileno(stdin));
@@ -309,7 +311,7 @@ int pipe_in, pipe_out;
 			}
 		}
 
-		if(command->words->word[0] == '[') { /* Command grouping */
+		if(command->flags & FLAG_GROUP) {
 			if(command->flags & FLAG_BACK) {
 #ifdef BSD
 				/* we solved this earlier... */
@@ -320,9 +322,9 @@ int pipe_in, pipe_out;
 			pt = command->words->word+1;
 			pt[strlen(pt)-1] = '\0';
 			if(command->flags & FLAG_BACK)
-				parse_and_run(pt,NONINTERACTIVE,DONT_WAIT);
+				parse_and_run(pt,NONINTERACTIVE,GROUP_JOB);
 			else
-				parse_and_run(pt,INTERACTIVE,DONT_WAIT);
+				parse_and_run(pt,INTERACTIVE,GROUP_JOB);
 			exit(0);
 		}
 
@@ -479,7 +481,7 @@ char *text, *comm;
 	if(pid == 0) { /* child. */
 		dup2(pipes[0],fileno(stdin));
 		close(pipes[1]);
-		parse_and_run(comm,NONINTERACTIVE,DONT_WAIT);
+		parse_and_run(comm,NONINTERACTIVE,NORMAL_JOB);
 		_exit(1);
 	} else { /* Parent process */
 		close(pipes[0]);
@@ -531,7 +533,7 @@ char *text_command;
 		devnull = open("/dev/null",O_WRONLY);
 		dup2(devnull,fileno(stdin));
 		*/
-		parse_and_run(text_command,NONINTERACTIVE,DONT_WAIT);
+		parse_and_run(text_command,NONINTERACTIVE,NORMAL_JOB);
 		_exit(1);
 	} else { /* Parent process */
 		close(pipes[1]);
@@ -567,20 +569,27 @@ char *text_command;
 	int i;
 	int ret;
 
+	if(parse_depth++ > MAX_PARSE_DEPTH) {
+		report_error("Excessive parse depth",NULL,0,0);
+		return(NULL);
+	}
+
 	output = (char *) malloc(1024);
 	output[0] = '\0';
 
 	pipe(pipes);
 	pid = fork();
+
 	if(pid == 0) { /* child. */
 		dup2(pipes[1],fileno(stdout));
 		close(pipes[0]);
+		close(pipes[1]);
 		/*
 		devnull = open("/dev/null",O_WRONLY);
 		dup2(devnull,fileno(stdin));
 		*/
-		parse_and_run(text_command,NONINTERACTIVE,DONT_WAIT);
-		_exit(1);
+		parse_and_run(text_command,NONINTERACTIVE,NORMAL_JOB);
+		exit(1);
 	} else { /* Parent process */
 		close(pipes[1]);
 		wait_for_process(pid);

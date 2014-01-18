@@ -75,6 +75,7 @@ int ch;
 	struct word_list *w, *ret_words;
 	struct command *next_command;
 	struct word_list *handler_args;
+	char *alias_text;
 
 	command->ch = ch;
 
@@ -167,16 +168,38 @@ int ch;
 				}
 				command->state = STATE_DONE;
 				command->quote_depth = 0;
-				if(command->words->next == NULL && 
-					command->words->word[0] == '!')
-					command = expand_history(command);
+				if(command->words->next == NULL) {
+					if(command->words->word[0] == '!')
+						command = expand_history(command);
+					else {
+						alias_text = find_alias(command->words->word);
+						if(alias_text) {
+							char *orig_str;
+							orig_str = strdup(command->words->word);
+							command = parse_string(command,alias_text);
+							reset_command_text(command,orig_str);
+							free(orig_str);
+						}
+					}
+				}
 				return(command);
 			}
 			if((ch == ' ' || ch == '\t') && command->quote_depth == 0) {
 				command->state = STATE_SPACE;
-				if(command->words->next == NULL && 
-					command->words->word[0] == '!')
-					command = expand_history(command);
+				if(command->words->next == NULL) {
+					if(command->words->word[0] == '!')
+						command = expand_history(command);
+					else {
+						alias_text = find_alias(command->words->word);
+						if(alias_text) {
+							char *orig_str;
+							orig_str = strdup(command->words->word);
+							command = parse_string(command,alias_text);
+							reset_command_text(command,orig_str);
+							free(orig_str);
+						}
+					}
+				}
 				return(command);
 			}
 			w = find_last_word(&command->words);
@@ -258,6 +281,7 @@ int ch;
 			if(ch == '[') {
 				command->state = STATE_WORD;
 				command->quote_stack[++command->quote_depth] = QUOTE_SQUARE;
+				command->flags |= FLAG_GROUP;
 				w = new_arg_word(command);
 				w->word[0] = ch;
 				w->word[1] = 0;
@@ -476,12 +500,9 @@ int ch;
 			if(ch == ' ' || ch == '\t') {
 				return(command);
 			}
-			if(isalnum(ch) || ch == '+') {
-				command->state = STATE_BACK_ARGS;
-				handler_args = new_word(&(command->handler_args));
-				add_letter_to_word(handler_args,ch);
-				return(command);
-			}
+			command->state = STATE_BACK_ARGS;
+			handler_args = new_word(&(command->handler_args));
+			add_letter_to_word(handler_args,ch);
 			return(command);
 
 		case STATE_BACK_ARGS :
@@ -690,6 +711,14 @@ struct command *command;
 	last_command->pipeline = next_command;
 }
 
+reset_command_text(command,pt)
+struct command *command;
+char *pt;
+{
+	strcpy(command->text,pt);
+	strcat(command->text," ");
+}
+
 add_command_text_letter(command,ch)
 struct command *command;
 int ch;
@@ -709,6 +738,11 @@ struct word_list *words;
 	char *pt;
 	struct command *command;
 
+	if(parse_depth++ > MAX_PARSE_DEPTH) {
+		report_error("Excessive parse depth",NULL,0,0);
+		return(0);
+	}
+
 	command = orig_command;
 
 	for(w=words; w; w=w->next) {
@@ -722,5 +756,253 @@ struct word_list *words;
 	}
 
 	return(1);
+}
+
+struct command *parse_string(command,text)
+struct command *command;
+char *text;
+{
+	int state;
+	char *str;
+	struct command *ret;
+
+	if(parse_depth++ > MAX_PARSE_DEPTH) {
+		report_error("Excessive parse depth",NULL,0,0);
+		return(NULL);
+	}
+
+	command->words = NULL;
+	command->text[0] = '\0';
+	command->state = STATE_SPACE;
+
+	for(str=text; *str; str++) {
+		add_command_text_letter(command,*str);
+		ret = parse_char(command,*str);
+		if(!ret) return(0);
+		command = ret;
+	}
+
+	add_command_text_letter(command,' ');
+	command = parse_char(command,' ');
+
+	return(command);
+}
+
+struct command *insert_parse_string(command,text)
+struct command *command;
+char *text;
+{
+	int state;
+	char *str;
+	struct command *ret;
+
+	if(parse_depth++ > MAX_PARSE_DEPTH) {
+		report_error("Excessive parse depth",NULL,0,0);
+		return(NULL);
+	}
+
+	command->state = STATE_WORD;
+
+	for(str=text; *str; str++) {
+		if(*str == '\n') 
+			ret = parse_char_limited(command,' ');
+		else 
+			ret = parse_char_limited(command,*str);
+		if(!ret) return(NULL);
+		command = ret;
+	}
+
+	return(command);
+}
+
+
+
+struct command *parse_char_limited(command,ch)
+struct command *command;
+int ch;
+{
+	struct word_list *w, *ret_words;
+	struct command *next_command;
+	struct word_list *handler_args;
+	char *alias_text;
+
+	command->ch = ch;
+
+	switch(command->state) {
+
+		case STATE_WORD: /* Currently parsing a word */
+
+			if(command->backslash) {
+				command->backslash = 0;
+				w = find_last_word(&command->words);
+				add_letter_to_word(w,ch);
+				return(command);
+			}
+			if(ch == '\\') {
+				command->backslash = 1;
+				return(command);
+			}
+
+			if(ch == '\"') {
+				if(command->quote_stack[command->quote_depth] == QUOTE_DOUBLE) {
+					command->quote_depth--;
+					if(command->quote_depth < 1)
+						return(command);
+				} else {
+					command->quote_stack[++command->quote_depth] =
+						QUOTE_DOUBLE;
+					if(command->quote_depth < 2)
+						return(command);
+				}
+			}
+
+			if(ch == '\'') {
+				if(command->quote_stack[command->quote_depth] == QUOTE_SINGLE) {
+					command->quote_depth--;
+					if(command->quote_depth < 1)
+						return(command);
+				} else {
+					command->quote_stack[++command->quote_depth] =
+						QUOTE_SINGLE;
+					if(command->quote_depth < 2)
+						return(command);
+				}
+			}
+
+			if(ch == '(') {
+				command->quote_stack[++command->quote_depth] = QUOTE_PAREN;
+				/*
+				if(command->quote_depth == 1) {
+					w = find_last_word(&command->words);
+					command->start_of_sub = strlen(w->word);
+				}
+				*/
+			}
+
+			if(ch == ')') {
+				if(command->quote_depth < 1 ||
+					command->quote_stack[command->quote_depth] != QUOTE_PAREN) {
+					report_mismatched_something(command);
+					return(NULL);
+				}
+				command->quote_depth--;
+				/*
+				if(command->quote_depth == 0) {
+					char *str_to_exec;
+					str_to_exec = find_last_word(&command->words)->word +
+						command->start_of_sub;
+					ret_words = words_from_command(str_to_exec+1);
+					str_to_exec[0] = '\0';
+					if(!parse_word_list(command,ret_words))
+						return(NULL);
+					return(command);
+				}
+				*/
+			}
+
+			if(ch == '[') {
+				command->quote_stack[++command->quote_depth] = QUOTE_SQUARE;
+			}
+
+			if(ch == ']') {
+				if(command->quote_depth < 1 ||
+				command->quote_stack[command->quote_depth] != QUOTE_SQUARE) {
+					report_mismatched_something(command);
+					return(NULL);
+				}
+				command->quote_depth--;
+			}
+
+
+			if(ch == '\n') {
+				if(command->quote_depth > 0) {
+					report_mismatched_something(command);
+					return(NULL);
+				}
+				command->state = STATE_DONE;
+				command->quote_depth = 0;
+				if(command->words->next == NULL) {
+					alias_text = find_alias(command->words->word);
+					if(alias_text) {
+						char *orig_str;
+						orig_str = strdup(command->words->word);
+						command = parse_string(command,alias_text);
+						reset_command_text(command,orig_str);
+						free(orig_str);
+					}
+				}
+				return(command);
+			}
+			if((ch == ' ' || ch == '\t') && command->quote_depth == 0) {
+				command->state = STATE_SPACE;
+				if(command->words->next == NULL) {
+					alias_text = find_alias(command->words->word);
+					if(alias_text) {
+						char *orig_str;
+						orig_str = strdup(command->words->word);
+						command = parse_string(command,alias_text);
+						reset_command_text(command,orig_str);
+						free(orig_str);
+					}
+				}
+				return(command);
+			}
+
+			w = find_last_word(&command->words);
+			add_letter_to_word(w,ch);
+			return(command);
+
+		case STATE_SPACE :
+
+			if(ch == '\"') {
+				command->state = STATE_WORD;
+				command->quote_stack[++command->quote_depth] = QUOTE_DOUBLE;
+				w = new_arg_word(command);
+				w->word[0] = 0;
+				return(command);
+			}
+
+			if(ch == '\'') {
+				command->state = STATE_WORD;
+				command->quote_stack[++command->quote_depth] = QUOTE_SINGLE;
+				w = new_arg_word(command);
+				w->word[0] = 0;
+				return(command);
+			}
+
+			if(ch == '(') {
+				command->state = STATE_WORD;
+				command->quote_stack[++command->quote_depth] = QUOTE_PAREN;
+				/*
+				command->start_of_sub = 0;
+				*/
+				w = new_arg_word(command);
+				w->word[0] = ch;
+				w->word[1] = 0;
+				return(command);
+			}
+
+			if(ch == '[') {
+				command->state = STATE_WORD;
+				command->quote_stack[++command->quote_depth] = QUOTE_SQUARE;
+				w = new_arg_word(command);
+				w->word[0] = ch;
+				w->word[1] = 0;
+				return(command);
+			}
+
+			if(ch == ' ' || ch == '\t') {
+				return(command);
+			} else { 
+				/* In a new word. */
+				command->state = STATE_WORD;
+				w = new_arg_word(command);
+				w->word[0] = ch;
+				w->word[1] = 0;
+				return(command);
+			}
+
+	}
+	perror("fell off end");
 }
 
