@@ -281,7 +281,8 @@ int ch;
 			if(ch == '[') {
 				command->state = STATE_WORD;
 				command->quote_stack[++command->quote_depth] = QUOTE_SQUARE;
-				command->flags |= FLAG_GROUP;
+				if(!command->words)
+					command->flags |= FLAG_GROUP;
 				w = new_arg_word(command);
 				w->word[0] = ch;
 				w->word[1] = 0;

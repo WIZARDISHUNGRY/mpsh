@@ -91,6 +91,10 @@ int which;
 			show_aliases();
 			return(1);
 		}
+		if(strcmp(arg,"-q") == 0) {
+			show_aliases_quotes();
+			return(1);
+		}
 
 		if(strcmp(arg,"-d") == 0) {
 			if(command->words->next->next)
@@ -113,11 +117,27 @@ int which;
 	return(1);
 }
 
-show_aliases() {
+show_aliases_quotes() {
 	struct alias *a;
 
 	for(a=aliases; a; a=a->next) {
-		printf("%s = %s\n",a->name,a->text);
+		printf("%s=\"%s\"\n",a->name,a->text);
+	}
+}
+
+
+show_aliases() {
+	struct alias *a;
+	int len, widest;
+
+	widest = 0;
+	for(a=aliases; a; a=a->next) {
+		len = strlen(a->name);
+		if(len > widest) widest = len;
+	}
+
+	for(a=aliases; a; a=a->next) {
+		printf("%-*s = %s\n",widest,a->name,a->text);
 	}
 }
 

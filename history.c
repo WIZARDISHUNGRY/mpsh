@@ -444,7 +444,7 @@ char *arg;
 
 	if(show_history_list(fmt,widths,1))
 		show_history_list(fmt,widths,0);
-	
+
 	free(widths);
 }
 
@@ -463,18 +463,25 @@ int calculate;
 	int field;
 	int fields;
 	char *pt;
-	char output[256];
+	char *output;
 	int w;
 	time_t tt;
 
 	fields = strlen(fmt);
 
-	if(calculate) 
+	if(calculate) {
+		output = NULL;
 		for(field=0; field<fields; field++) 
 			widths[field] = 0;
+	} else { 
+		/* Allocate output buffer based on widths of all fields */
+		len = 0;
+		for(i=0; i<fields; i++) len += widths[i] +1;
+		output = malloc(len+2);
+	}
 
 	/* Header line */
-	output[0] = '\0';
+	if(!calculate) output[0] = '\0';
 	for(field=0; field<fields; field++) {
 		switch(fmt[field]) {
 			case 'n':
@@ -511,8 +518,7 @@ int calculate;
 			w = strlen(pt);
 			if(w > widths[field]) widths[field] = w;
 		} else {
-			cat_hist_output(fmt[field],widths[field],
-				output,pt);
+			cat_hist_output(fmt[field],widths[field],output,pt);
 		}
 	}
 	if(!calculate) puts(output);
@@ -522,7 +528,7 @@ int calculate;
 	for(h=0; history[h]; h++) {
 		hp = history[h];
 		if(hp->text) {
-			output[0] = '\0';
+			if(!calculate) output[0] = '\0';
 			for(field=0; field<fields; field++) {
 				switch(fmt[field]) {
 					case 'n':
@@ -567,8 +573,7 @@ int calculate;
 					w = strlen(pt);
 					if(w > widths[field]) widths[field] = w;
 				} else {
-					cat_hist_output(fmt[field],widths[field],
-						output,pt);
+					cat_hist_output(fmt[field],widths[field],output,pt);
 				}
 			}
 			if(!calculate) {
@@ -577,6 +582,7 @@ int calculate;
 		}
 	}
 
+	if(output) free(output);
 	return(1);
 }
 

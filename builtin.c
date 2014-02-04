@@ -77,7 +77,6 @@ int builtin_source();
 int builtin_set();
 int builtin_exit();
 int builtin_clear();
-int builtin_show();
 int builtin_alias();
 
 struct builtins builtin_fns_parent[] = {
@@ -168,6 +167,14 @@ int which;
 	
 	CHILD:
 
+		new form:
+		-s
+		-sa
+		-si
+		-q
+		-qa
+		-qi
+
 		setenv -s
 		setenv -i
 		setenv -c
@@ -195,15 +202,31 @@ int which;
 			show_env_public();
 			return(1);
 		}
+
+		if(strcmp(arg,"-sa") == 0) {
+			show_env_private();
+			return(1);
+		}
+
+		if(strcmp(arg,"-si") == 0) {
+			show_env_mpsh();
+			return(1);
+		}
+
+		/* This is changing to "clear" soon. */
 		if(strcmp(arg,"-c") == 0) {
 			show_env_private();
 			return(1);
 		}
+
+		/* This is going away soon. */
 		if(strcmp(arg,"-i") == 0) {
 			show_env_mpsh();
 			return(1);
 		}
-		return(0);
+
+		report_error("Unknown setenv option",arg,0,0);
+		return(1);
 	}
 }
 
@@ -344,12 +367,5 @@ int which;
 	}
 
 	puts("usage: mpsh-clear [-d] [-h] [-e var]");
-}
-
-builtin_show(command,which)
-struct command *command;
-int which;
-{
-	show_env(command);
 }
 

@@ -57,6 +57,10 @@ jobs.c:
 #include <wait.h>
 #endif
 
+#ifdef IRIX
+#include <wait.h>
+#endif
+
 #ifdef LINUX
 #include <wait.h>
 #endif

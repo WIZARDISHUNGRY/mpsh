@@ -370,3 +370,14 @@ struct command *command;
 
 	return(dest);
 }
+
+display_word_list(w)
+struct word_list *w;
+{
+	while(w) {
+		if(w->word[0]) puts(w->word);
+		w = w->next;
+	}
+}
+
+

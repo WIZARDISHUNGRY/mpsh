@@ -93,9 +93,6 @@ struct command *src;
 	for(w=w1; w->next; w=w->next) ;
 	w->next = w2;
 
-	/*
-	cleanup_set(w1);
-	*/
 	display_set(w1);
 }
 
@@ -125,9 +122,6 @@ struct command *src;
 		}
 	}
 
-	/*
-	cleanup_set(dest);
-	*/
 	display_set(dest);
 }
 
@@ -242,9 +236,6 @@ struct command *src;
 		skip: ;
 	}
 
-	/*
-	cleanup_set(dest);
-	*/
 	display_set(dest);
 }
 
@@ -288,9 +279,6 @@ struct command *src;
 		skip2: ;
 	}
 
-	/*
-	cleanup_set(dest);
-	*/
 	display_set(dest);
 }
 
@@ -413,40 +401,41 @@ struct word_list *src;
 display_set(set) /* Display a set. */
 struct word_list *set;
 {
-	struct word_list *w;
-
 	cleanup_set(set);
-
-	for(w=set; w; w=w->next) {
-		if(w->word[0]) puts(w->word);
-	}
+	display_word_list(set);
 }
 
 
-show_set(set) /* Display a set. */
+show_set(set) /* Input a set using { ... } syntax. */
 struct word_list *set;
 {
 	struct word_list *w;
-	struct word_list *dest;
+	struct word_list *dest, *d;
 	int depth;
 
-	dest = NULL;
+	d = dest = init_word();
 	depth = 0;
 
 	for(w=set; w; w=w->next) {
 		if(strcmp(w->word,"{") == 0) depth++;
 		if(strcmp(w->word,"}") == 0) depth--;
 
-		if(depth < 0) {
+		if(depth < 0) { /* Print and exit */
+			d = find_next_to_last_word(&dest);
+			free_word_list(d->next);
+			d->next = NULL;
+			display_set(dest);
 			return(1);
 		}
 
-		if(depth > 0) 
-			printf("%s ",w->word);
-		else
-			if(w->word[0]) {
-				puts(w->word);
-			}
+		if(depth > 0) {
+			append_string_to_word(d,w->word);
+			append_string_to_word(d," ");
+		} else {
+			append_string_to_word(d,w->word);
+			d->next = init_word();
+			d = d->next;
+		}
 	}
 
 	report_error("Mismatched set",NULL,0,0);
@@ -475,4 +464,5 @@ struct command *comm;
 	comm->flags = (comm->flags & FLAG_LOWER);
 
 }
+
 

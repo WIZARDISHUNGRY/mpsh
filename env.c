@@ -301,43 +301,6 @@ struct command *command;
 	set_env_str(str);
 }
 
-show_env(command)
-struct command *command;
-{
-	char *str;
-
-	if(!command->words->next) {
-		report_error("Missing mpsh-show option",NULL,0,0);
-		return(0);
-	}
-
-	str = command->words->next->word;
-
-	if(str[0] == '-') {
-
-		if(strcmp(str,"-e") == 0) {
-			show_env_public();
-			return(1);
-		}
-
-		if(strcmp(str,"-c") == 0) {
-			show_env_private();
-			return(1);
-		}
-
-		if(strcmp(str,"-i") == 0) {
-			show_env_mpsh();
-			return(1);
-		}
-
-		report_error("Unknown mpsh-show option",str,0,0);
-		return(0);
-	}
-
-	report_error("Unknown mpsh-show option",str,0,0);
-	return(0);
-}
-
 set_env_str(str)
 char *str;
 {
@@ -622,7 +585,10 @@ char *str, *str2;
 	curr->pipeline = further_commands;
 	curr->flags = flags;
 	curr->pipe_io_flags = pipe_flags;
+
+	/*
 	while(curr->pipeline) curr = curr->pipeline;
+	*/
 
 	last = find_last_word(&curr->words);
 	last->next = save_args;
