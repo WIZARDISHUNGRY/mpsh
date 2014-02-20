@@ -36,102 +36,29 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 mpsh by Dave Fischer http://www.cca.org
 
-scripts.c:
+history.h:
 
-	run mpsh scripts
+	structs for history
+	needed for history.c and jobs.c
 
 */
 
 
+struct history_entry {
+	char *text;
+	char *expansion;
+	char *dir;
+	char exit[16];
+	time_t user_time;
+	time_t sys_time;
+	time_t timestamp;
+	time_t elapsed;
+	char time_start[28];
+	char time_end[28];
+	int smp_id;
+} ;
 
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <strings.h>
-#include <signal.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
 
-
-#ifdef LINUX
-#endif
-
-#ifdef BSD
-#endif
-
-#include "mpsh.h"
-
-
-#define BUFF_SIZE 512
-
-
-run_script(name,quiet)
-char *name;
-int quiet;
-{
-	FILE *fp;
-	char *buff;
-	int len;
-
-
-	fp = fopen(name,"r");
-	if(!fp) {
-		if(!quiet) report_error("Error running script",name,0,1);
-		return(1);
-	}
-
-	buff = (char *) malloc(BUFF_SIZE);
-
-	while(fgets(buff,BUFF_SIZE,fp) != NULL) {
-		len = strlen(buff);
-		if(len > 0) buff[len-1] = '\0';
-		if(buff[0] && buff[0] != '#') {
-			parse_depth = 0;
-			parse_and_run(buff,NONINTERACTIVE);
-		}
-	}
-
-	fclose(fp);
-	free(buff);
-	return(0);
-}
-
-run_script_with_args(argc,argv,quiet)
-int argc;
-char *argv[];
-int quiet;
-{
-	char buff[256];
-	char *total_args;
-	int len;
-	int ret;
-	int i;
-
-	len = 2;
-	for(i=2; i < argc; i++) len += strlen(argv[i]) + 1;
-	len++;
-
-	total_args = malloc(len);
-	strcpy(total_args,"*=");
-
-	for(i=2; i < argc; i++) {
-		strcat(total_args,argv[i]);
-		if(i+1 < argc)
-			strcat(total_args," ");
-		sprintf(buff,"%d=%s",i-1,argv[i]);
-		set_env_str(buff);
-	}
-
-	set_env_str(total_args);
-	free(total_args);
-	sprintf(buff,"#=%d",argc-2);
-	set_env_str(buff);
-
-	ret = run_script(argv[1],quiet);
-
-	return(ret);
-}
+char *format_time();
 

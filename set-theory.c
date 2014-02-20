@@ -101,7 +101,6 @@ setop_intersection(src)
 struct command *src;
 {
 	struct word_list *w1, *w2;
-	struct word_list *w;
 	struct word_list *s1, *s2;
 	struct word_list *dest, *d;
 
@@ -214,7 +213,6 @@ setop_difference(src)
 struct command *src;
 {
 	struct word_list *w1, *w2;
-	struct word_list *w;
 	struct word_list *s1, *s2;
 	struct word_list *dest, *d;
 
@@ -243,7 +241,6 @@ setop_symmetric(src)
 struct command *src;
 {
 	struct word_list *w1, *w2;
-	struct word_list *w;
 	struct word_list *s1, *s2;
 	struct word_list *dest, *d;
 
@@ -295,7 +292,6 @@ struct word_list **dest1, **dest2;
 	/* Removes setop args, pipeline settings, etc */
 	c = init_command(src);
 	c->words = src->words;
-	c->flags |= src->flags & FLAG_GROUP;
 
 	*dest1 = w = init_word();
 
@@ -366,8 +362,8 @@ struct word_list **srcpt;
 cleanup_set(src) /* Remove duplicates */
 struct word_list *src;
 {
-	struct word_list *s0, *s1, *s2;
-	struct word_list *tmp, *old;
+	struct word_list *s1, *s2;
+	struct word_list *old;
 
 
 	for(s1=src; s1; s1=s1->next) {

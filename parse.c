@@ -177,11 +177,12 @@ int ch;
 							char *orig_str;
 							orig_str = strdup(command->words->word);
 							command = parse_string(command,alias_text);
+							if(!command) return(NULL);
 							reset_command_text(command,orig_str);
 							free(orig_str);
 						}
 					}
-				}
+				} 
 				return(command);
 			}
 			if((ch == ' ' || ch == '\t') && command->quote_depth == 0) {
@@ -195,6 +196,7 @@ int ch;
 							char *orig_str;
 							orig_str = strdup(command->words->word);
 							command = parse_string(command,alias_text);
+							if(!command) return(NULL);
 							reset_command_text(command,orig_str);
 							free(orig_str);
 						}
@@ -462,6 +464,7 @@ int ch;
 				command->flags |= FLAG_SMP_SYM;
 				return(command);
 			}
+
 			if(isdigit(ch)) {
 				command->flags |= FLAG_SMP;
 				command->smp_num *= 10;
@@ -540,7 +543,6 @@ struct command *command;
 				report_error("Multiprocess value must be 2 or higher",
 					command->text,0,0);
 				return(0);
-				continue;
 			}
 			if(previous && (previous->flags & FLAG_PIPE)) {
 				report_error("Use command grouping",command->text,0,0);
@@ -561,12 +563,11 @@ expand_mp_symmetric(command)
 struct command *command;
 {
 	int i, jobs;
-	int cnt;
 	int flags;
-	struct command *next_command, *start_command, *cmd;
+	struct command *next_command, *start_command;
 	struct command *last_command;
-	struct word_list *w_start, *w;
-	struct word_list *first_args, *original_args;
+	struct word_list *w;
+	struct word_list *first_args;
 	int handler;
 	int smp_id;
 	int nice_val;
@@ -585,7 +586,6 @@ struct command *command;
 	flags = command->flags ^ FLAG_SMP ^ FLAG_SMP_SYM;
 	command->flags = flags;
 	handler = command->job_handler;
-	original_args = command->words;
 	next_command = command->pipeline;
 	nice_val = command->nice;
 
@@ -628,7 +628,7 @@ struct command *command;
 	struct command *next_command, *start_command, *cmd;
 	struct command *last_command;
 	struct word_list *w_start, *w;
-	struct word_list *first_args, *original_args;
+	struct word_list *first_args;
 	int handler;
 	int smp_id;
 	int nice_val;
@@ -660,7 +660,6 @@ struct command *command;
 	flags = command->flags ^ FLAG_SMP;
 	handler = command->job_handler;
 	nice_val = command->nice;
-	original_args = command->words;
 	next_command = command->pipeline;
 
 	w = w_start;
@@ -763,7 +762,6 @@ struct command *parse_string(command,text)
 struct command *command;
 char *text;
 {
-	int state;
 	char *str;
 	struct command *ret;
 
@@ -793,7 +791,6 @@ struct command *insert_parse_string(command,text)
 struct command *command;
 char *text;
 {
-	int state;
 	char *str;
 	struct command *ret;
 
@@ -822,9 +819,7 @@ struct command *parse_char_limited(command,ch)
 struct command *command;
 int ch;
 {
-	struct word_list *w, *ret_words;
-	struct command *next_command;
-	struct word_list *handler_args;
+	struct word_list *w;
 	char *alias_text;
 
 	command->ch = ch;
@@ -928,6 +923,7 @@ int ch;
 						char *orig_str;
 						orig_str = strdup(command->words->word);
 						command = parse_string(command,alias_text);
+						if(!command) return(NULL);
 						reset_command_text(command,orig_str);
 						free(orig_str);
 					}
@@ -942,6 +938,7 @@ int ch;
 						char *orig_str;
 						orig_str = strdup(command->words->word);
 						command = parse_string(command,alias_text);
+						if(!command) return(NULL);
 						reset_command_text(command,orig_str);
 						free(orig_str);
 					}

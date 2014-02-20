@@ -136,20 +136,27 @@ int which;
 	CHILD:
 
 		cd -s
+		cd -h
 
 	*/
 
 	if(which == CHILD) {
-		if(arg && strcmp(arg,"-s") == 0) {
+		if(strcmp(arg,"-s") == 0) {
 			show_cdhistory();
 			return(1);
-		} else {
-			return(0);
 		}
+		if(strcmp(arg,"-h") == 0) {
+			puts("usage: cd         # change directory to $HOME");
+			puts("       cd [dir]   # cd to [dir]");
+			puts("       cd ![hist] # cd to directory history entry");
+			puts("       cd -s      # show directory history");
+			puts("       cd -c      # clear directory history");
+			return(1);
+		}
+		return(0);
 	} else {
-		if(arg && strcmp(arg,"-s") == 0) {
-			return(0);
-		}
+		if(arg && strcmp(arg,"-s") == 0) return(0);
+		if(arg && strcmp(arg,"-h") == 0) return(0);
 	}
 
 	if(arg && strcmp(arg,"-c") == 0) {
@@ -157,6 +164,10 @@ int which;
 		return(1);
 	}
 		
+	if(arg && arg[0] == '-') {
+		report_error("Unknown cd option",arg,0,0);
+		return(1);
+	}
 
 	if(arg == NULL) 
 		arg = get_env("HOME");

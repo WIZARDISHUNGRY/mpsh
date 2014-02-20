@@ -72,20 +72,7 @@ history.c:
 #include "state.h"
 #include "signal_names.h"
 
-
-struct history_entry {
-	char *text;
-	char *expansion;
-	char *dir;
-	char exit[16];
-	time_t user_time;
-	time_t sys_time;
-	time_t timestamp;
-	time_t elapsed;
-	char time_start[28];
-	char time_end[28];
-	int smp_id;
-} ;
+#include "history.h"
 
 #define HISTORY_ALLOC_SIZE 1024
 int hist_allocated;
@@ -94,8 +81,6 @@ struct history_entry **history;
 int history_next;
 
 int show_history_sub;
-
-char *format_time();
 
 init_history() {
 	int i;
@@ -144,9 +129,10 @@ clear_history() {
 	init_history();
 
 	/* Copy back temp array, if any */
-	for(tmp_entry=0; tmp_entry<jobs; tmp_entry++)
-		history[tmp_entry] = hist_tmp[tmp_entry];
+	for(i=0; i<tmp_entry; i++)
+		history[i] = hist_tmp[i];
 
+	free(hist_tmp);
 }
 
 int add_history_entry(command)
@@ -217,7 +203,6 @@ struct command *command;
 	struct history_entry *h;
 	time_t tt;
 	int len;
-	int i;
 
 	if(command->pipeline && !command->smp_num) return(-1);
 
@@ -249,7 +234,7 @@ struct command *command;
 	return(hist);
 }
 
-#ifdef BSD
+#if defined BSD || defined LINUX
 
 add_history_details(hist,st,ruse) /* BSD VERSION */
 int hist;
@@ -351,7 +336,6 @@ siginfo_t *infop;
 {
 	struct history_entry *hp;
 	int div;
-	time_t tt;
 
 	if(hist == -1) return;
 
@@ -370,16 +354,14 @@ siginfo_t *infop;
 
 #endif
 
-show_history(arg) 
+show_history(arg,arg2) 
 char *arg;
+char *arg2;
 {
-	int details;
 	int i;
 	int h;
 	struct history_entry *hp;
 	char buff1[32], buff2[32];
-	int user_widest, sys_widest, exit_widest;
-	int len;
 	char *fmt;
 	int *widths;
 	time_t tt;
@@ -387,7 +369,10 @@ char *arg;
 	if(arg == NULL) {
 		fmt = get_env("mpsh-hist-disp");
 	} else {
-		if(strcmp(arg,"-l") == 0) {
+		if(strcmp(arg,"-s") == 0) {
+			fmt = get_env("mpsh-hist-disp");
+			arg = NULL;
+		} else if(strcmp(arg,"-l") == 0) {
 			fmt = get_env("mpsh-hist-disp-l");
 			arg = NULL;
 		}
@@ -404,6 +389,15 @@ char *arg;
 			hp = history[h];
 			if(hp->text) {
 				printf("Entry:       %d\n",atoi(arg));
+				printf("Command:     %s\n",hp->text);
+				printf("Parsed:      %s\n",hp->expansion);
+
+				if(hp->dir) printf("Directory:   %s\n",hp->dir);
+				if(hp->exit[0] == 'S' && hp->exit[1] == 'I')
+					printf("Killed by:   %s\n",hp->exit);
+				else
+					printf("Exit Status: %s\n",hp->exit);
+
 				printf("Started:     %s\n",hp->time_start);
 				printf("Ended:       %s\n",hp->time_end);
 
@@ -417,15 +411,7 @@ char *arg;
 
 				printf("User CPU:    %s\n",format_time(hp->user_time,buff1));
 				printf("System CPU:  %s\n", format_time(hp->sys_time,buff2));
-				if(hp->dir)
-					printf("Directory:   %s\n",hp->dir);
 
-				if(hp->exit[0] == 'S' && hp->exit[1] == 'I')
-					printf("Killed by:   %s\n",hp->exit);
-				else
-					printf("Exit Status: %s\n",hp->exit);
-
-				printf("Command:     %s\n",hp->text);
 			} else {
 				report_error("Unknown history entry",arg,0,0);
 			}
@@ -442,23 +428,37 @@ char *arg;
 
 	widths = (int *) malloc(sizeof(int)*strlen(fmt));
 
-	if(show_history_list(fmt,widths,1))
-		show_history_list(fmt,widths,0);
+	if(arg2) {
+		h = atoi(arg2);
+		for(i=0; history[i]; i++) ;
+		if(h >= i) {
+			report_error("History entry out of bounds",arg2,0,0);
+			return;
+		}
+	} else
+		h = -1;
+
+	if(fmt[0] == '\0') {
+		report_error("Null history format string",NULL,0,0);
+		return;
+	}
+
+	if(show_history_list(fmt,widths,1,h))
+		show_history_list(fmt,widths,0,h);
 
 	free(widths);
 }
 
-show_history_list(fmt,widths,calculate)
+show_history_list(fmt,widths,calculate,entry)
 char *fmt;
 int *widths;
 int calculate;
+int entry;
 {
-	int details;
 	int i;
 	int h;
 	struct history_entry *hp;
 	char buff[256];
-	char buff1[32], buff2[32];
 	int len;
 	int field;
 	int fields;
@@ -481,103 +481,107 @@ int calculate;
 	}
 
 	/* Header line */
-	if(!calculate) output[0] = '\0';
-	for(field=0; field<fields; field++) {
-		switch(fmt[field]) {
-			case 'n':
-				pt = "Num";
-				break;
-			case 'c':
-			case 'C':
-				pt = "Command";
-				break;
-			case 'u':
-				pt = "User";
-				break;
-			case 's':
-				pt = "Sys";
-				break;
-			case 'e':
-				pt = "Elapsed";
-				break;
-			case 't':
-				pt = "Started";
-				break;
-			case 'x':
-				pt = "Exit";
-				break;
-			case 'd':
-			case 'D':
-				pt = "Directory";
-				break;
-			default:
-				report_error("Unknown history field",NULL,fmt[field],0);
-				return(0);
+	if(entry == -1) {
+		if(!calculate) output[0] = '\0';
+		for(field=0; field<fields; field++) {
+			switch(fmt[field]) {
+				case 'n':
+					pt = "Num";
+					break;
+				case 'c':
+				case 'C':
+					pt = "Command";
+					break;
+				case 'u':
+					pt = "User";
+					break;
+				case 's':
+					pt = "Sys";
+					break;
+				case 'e':
+					pt = "Elapsed";
+					break;
+				case 't':
+					pt = "Started";
+					break;
+				case 'x':
+					pt = "Exit";
+					break;
+				case 'd':
+				case 'D':
+					pt = "Directory";
+					break;
+				default:
+					report_error("Unknown history field",NULL,fmt[field],0);
+					return(0);
+			}
+			if(calculate) {
+				w = strlen(pt);
+				if(w > widths[field]) widths[field] = w;
+			} else {
+				cat_hist_output(fmt[field],widths[field],output,pt);
+			}
 		}
-		if(calculate) {
-			w = strlen(pt);
-			if(w > widths[field]) widths[field] = w;
-		} else {
-			cat_hist_output(fmt[field],widths[field],output,pt);
-		}
+		if(!calculate) puts(output);
 	}
-	if(!calculate) puts(output);
 
 
 	/* History entries */
 	for(h=0; history[h]; h++) {
-		hp = history[h];
-		if(hp->text) {
-			if(!calculate) output[0] = '\0';
-			for(field=0; field<fields; field++) {
-				switch(fmt[field]) {
-					case 'n':
-						sprintf(buff,"%d",h);
-						pt = buff;
-						break;
-					case 'c':
-					case 'C':
-						pt = hp->text;
-						break;
-					case 'u':
-						format_time(hp->user_time,buff),
-						pt = buff;
-						break;
-					case 's':
-						format_time(hp->sys_time,buff),
-						pt = buff;
-						break;
-					case 'e':
-						if(hp->elapsed != -1) {
-							format_time(hp->elapsed,buff);
+		if(entry == -1 || entry == h) {
+			hp = history[h];
+			if(hp->text) {
+				if(!calculate) output[0] = '\0';
+				for(field=0; field<fields; field++) {
+					switch(fmt[field]) {
+						case 'n':
+							sprintf(buff,"%d",h);
 							pt = buff;
-						} else {
-							time(&tt);
-							format_time(tt - hp->timestamp,buff);
+							break;
+						case 'c':
+						case 'C':
+							pt = hp->text;
+							break;
+						case 'u':
+							format_time(hp->user_time,buff),
 							pt = buff;
-						}
-						break;
-					case 't':
-						sprintf(buff,"%.8s",hp->time_start+11);
-						pt = buff;
-						break;
-					case 'x': /* Exit status / signal / etc */
-						pt = hp->exit;
-						break;
-					case 'd':
-					case 'D':
-						pt = hp->dir;
-						break;
+							break;
+						case 's':
+							format_time(hp->sys_time,buff),
+							pt = buff;
+							break;
+						case 'e':
+							if(hp->elapsed != -1) {
+								format_time(hp->elapsed,buff);
+								pt = buff;
+							} else {
+								time(&tt);
+								format_time(tt - hp->timestamp,buff);
+								pt = buff;
+							}
+							break;
+						case 't':
+							sprintf(buff,"%.8s",hp->time_start+11);
+							pt = buff;
+							break;
+						case 'x': /* Exit status / signal / etc */
+							pt = hp->exit;
+							break;
+						case 'd':
+						case 'D':
+							pt = hp->dir;
+							break;
+					}
+					if(calculate) {
+						w = strlen(pt);
+						if(w > widths[field]) widths[field] = w;
+					} else {
+						cat_hist_output(fmt[field],widths[field],output,pt);
+					}
 				}
-				if(calculate) {
-					w = strlen(pt);
-					if(w > widths[field]) widths[field] = w;
-				} else {
-					cat_hist_output(fmt[field],widths[field],output,pt);
+				if(!calculate) {
+					puts(output);
 				}
-			}
-			if(!calculate) {
-				puts(output);
 			}
 		}
 	}
@@ -665,9 +669,7 @@ struct command *command;
 {
 	char *pt;
 	char *text;
-	int i;
 	int h;
-	int len;
 	int text_dir, text_command, text_num;
 	int text_parsed;
 	char *arg;
@@ -693,7 +695,7 @@ struct command *command;
 		} else if(strcmp(arg,"num") == 0) {
 			text_num = 1;
 		} else {
-			report_error("History argument unknown",arg,0,0);
+			report_error("Unknown history argument",arg,0,0);
 			return(NULL);
 		}
 	}
@@ -730,8 +732,9 @@ struct command *command;
 	text = history[h]->text;
 	if(text) {
 		command = parse_string(command,text);
+		if(!command) return(NULL);
 		if(show_history_sub) 
-			command->display_text = 1;
+			command->flags |= FLAG_DISPLAY_TEXT;
 	}
 	return(command);
 }

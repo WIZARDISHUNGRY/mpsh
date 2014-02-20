@@ -76,67 +76,33 @@ int builtin_wait();
 int builtin_source();
 int builtin_set();
 int builtin_exit();
-int builtin_clear();
 int builtin_alias();
 
-struct builtins builtin_fns_parent[] = {
+struct builtins builtin_fns[] = {
 	"fg",		builtin_fg,
 	"wait",		builtin_wait,
 	".",		builtin_source,
 	"exit",		builtin_exit,
 	"alias",	builtin_alias,
-	/* Either parent or child: */
 	"history",	builtin_hist,
 	"cd",		builtin_cd,
 	"setenv",	builtin_setenv,
-	NULL,		NULL
-} ;
-
-struct builtins builtin_fns_child[] = {
 	"jobs",		builtin_jobs,
 	"{",		builtin_set,
-	/* Either parent or child: */
-	"history",	builtin_hist,
-	"cd",		builtin_cd,
-	"setenv",	builtin_setenv,
 	NULL,		NULL
 } ;
 
-
-
-
-is_child_builtin(text)
-char *text;
-{
-	struct builtins *builtin;
-	int i;
-
-	builtin = builtin_fns_child;
-
-	for(i=0; builtin[i].name; i++) {
-		if(strcmp(text,builtin[i].name) == 0) {
-			return(1);
-		}
-	}
-	return(0);
-}
 
 try_exec_builtin(which,command)
 int which;
 struct command *command;
 {
-	struct builtins *builtin;
 	int i;
 
-	if(which == 0)
-		builtin = builtin_fns_parent;
-	else
-		builtin = builtin_fns_child;
-
-	for(i=0; builtin[i].name; i++) {
-		if(strcmp(command->words->word,builtin[i].name) == 0) {
+	for(i=0; builtin_fns[i].name; i++) {
+		if(strcmp(command->words->word,builtin_fns[i].name) == 0) {
 			command->pid = -1;
-			return((*(builtin[i].fn))(command,which));
+			return((*(builtin_fns[i].fn))(command,which));
 		}
 	}
 	return(0);
@@ -154,7 +120,10 @@ int which;
 		arg = NULL;
 
 	if(!arg) {
+		/*
 		report_error("Missing setenv option",NULL,0,0);
+		*/
+		display_env(ENV_PUBLIC,0);
 		return(1);
 	}
 
@@ -164,20 +133,18 @@ int which;
 
 		setenv name=val
 		setenv -d val
-	
+
 	CHILD:
 
-		new form:
 		-s
 		-sa
 		-si
+		-sh
 		-q
 		-qa
 		-qi
-
-		setenv -s
-		setenv -i
-		setenv -c
+		-qh
+		-h
 
 	*/
 
@@ -198,32 +165,63 @@ int which;
 		if(arg[0] != '-') {
 			return(0);
 		}
+
 		if(strcmp(arg,"-s") == 0) {
-			show_env_public();
+			display_env(ENV_PUBLIC,0);
 			return(1);
 		}
 
 		if(strcmp(arg,"-sa") == 0) {
-			show_env_private();
+			display_env(ENV_ALIAS,0);
 			return(1);
 		}
 
 		if(strcmp(arg,"-si") == 0) {
-			show_env_mpsh();
+			display_env(ENV_INTERNAL,0);
 			return(1);
 		}
 
+		if(strcmp(arg,"-sh") == 0) {
+			display_env(ENV_HANDLER,0);
+			return(1);
+		}
+
+		if(strcmp(arg,"-q") == 0) {
+			display_env(ENV_PUBLIC,1);
+			return(1);
+		}
+
+		if(strcmp(arg,"-qa") == 0) {
+			display_env(ENV_ALIAS,1);
+			return(1);
+		}
+
+		if(strcmp(arg,"-qi") == 0) {
+			display_env(ENV_INTERNAL,1);
+			return(1);
+		}
+
+		if(strcmp(arg,"-qh") == 0) {
+			display_env(ENV_HANDLER,1);
+			return(1);
+		}
+
+		if(strcmp(arg,"-h") == 0) {
+		puts("usage: setenv          # show environment variables");
+		puts("       setenv name=val # set env variable [name] to [val]");
+		puts("       setenv -s[aih]  # show var, alias, internal, handlers");
+		puts("       setenv -q[aih]  # show quoted");
+		puts("       setenv -d name  # delete [name] variable");
+		return(1);
+		}
+
+#ifdef OBSOLETE
 		/* This is changing to "clear" soon. */
 		if(strcmp(arg,"-c") == 0) {
-			show_env_private();
+			clear_env();
 			return(1);
 		}
-
-		/* This is going away soon. */
-		if(strcmp(arg,"-i") == 0) {
-			show_env_mpsh();
-			return(1);
-		}
+#endif
 
 		report_error("Unknown setenv option",arg,0,0);
 		return(1);
@@ -234,7 +232,55 @@ builtin_jobs(command,which) /* Show current jobs */
 struct command *command;
 int which;
 {
-	show_jobs();
+	char *arg;
+	char *arg2;
+	int job;
+
+	arg = arg2 = NULL;
+
+	if(command->words->next) {
+		arg = command->words->next->word;
+		if(command->words->next->next) 
+			arg2 = command->words->next->next->word;
+		else
+			arg2 = NULL;
+	} else
+		arg = NULL;
+
+	if(arg && strcmp(arg,"-d") == 0) {
+		if(arg2) {
+			delete_job_entry(arg2);
+			return(1);
+		} else {
+			report_error("Missing jobs -d argument",NULL,0,0);
+			return(1);
+		}
+	}
+
+	if(which == PARENT) return(0);
+
+	if(arg && strcmp(arg,"-h") == 0) {
+		puts("usage: jobs            # Display current jobs");
+		puts("       jobs %job       # Display full details for one job");
+		puts("       jobs -s [%job]  # Display (specific) jobs");
+		puts("       jobs -l [%job]  # Display (specific) jobs, long format");
+		puts("       jobs fmt [%job] # Display (specific) jobs, [fmt] format");
+		puts("       jobs -d %job    # Delete one job");
+		return(1);
+	}
+
+	if(arg2)
+		job = pid_to_job(arg2);
+	else
+		job = -1;
+
+	if(arg && isdigit(arg[0])) {
+		job = pid_to_job(arg);
+		show_detailed_job(job);
+		return(1);
+	}
+
+	show_jobs(arg,job);
 	return(1);
 }
 
@@ -242,7 +288,8 @@ builtin_hist(command,which) /* Display command history */
 struct command *command;
 int which;
 {
-	struct word_list *arg;
+	char *arg;
+	char *arg2;
 
 	/*
 
@@ -252,31 +299,47 @@ int which;
 		history -s
 		history -l
 		history [n]
+		history [fmt]
+		history -h
 
 	PARENT PROCESS:
 
 		history -c
 	*/
 
-	arg = command->words->next;
+
+	if(command->words->next) {
+		arg = command->words->next->word;
+		if(command->words->next->next)
+			arg2 = command->words->next->next->word;
+		else
+			arg2 = NULL;
+	} else {
+		arg = NULL;
+		arg2 = NULL;
+	}
 
 	if(which == PARENT) {
-		if(arg && strcmp(arg->word,"-c") == 0) {
+		if(arg && strcmp(arg,"-c") == 0) {
 			clear_history();
 			return(1);
 		} else {
 			return(0);
 		}
 	} else {
-		if(arg && strcmp(arg->word,"-c") == 0) {
-			return(0);
-		} else {
-			if(arg)
-				show_history(arg->word);
-			else
-				show_history(NULL);
-			return(1);
+		if(arg != NULL) {
+			if(strcmp(arg,"-h") == 0) {
+				puts("usage: history        # show short format");
+				puts("       history n      # show full details for one entry");
+				puts("       history -s [n] # show short format");
+				puts("       history -l [n] # show long format");
+				puts("       history fmt    # show with [fmt] format");
+				puts("       history -c     # clear all entries");
+				return(1);
+			}
 		}
+		show_history(arg,arg2);
+		return(1);
 	}
 }
 
@@ -284,10 +347,24 @@ builtin_fg(command,which) /* Continue a stopped job */
 struct command *command;
 int which;
 {
+	char *arg;
+
 	if(command->words->next)
-		fg_job(command->words->next->word);
+		arg = command->words->next->word;
 	else
-		fg_job(NULL);
+		arg = NULL;
+
+	if(arg && strcmp(arg,"-h") == 0) {
+		if(which == PARENT) return(0);
+		else {
+			puts("usage: fg      # Resume default stopped job");
+			puts("       fg %-   # Resume previous stopped job");
+			puts("       fg %job # Resume specified job");
+			return(1);
+		}
+	}
+
+	fg_job(arg);
 	return(1);
 }
 
@@ -295,6 +372,8 @@ builtin_set(command,which) /* Display a set. */
 struct command *command;
 int which;
 {
+	if(which == PARENT) return(0);
+
 	show_set(command->words->next);
 	return(1);
 }
@@ -310,10 +389,18 @@ int which;
 
 	if(!command->words->next) {
 		report_error("Missing source filename",NULL,0,0);
-		return(0);
+		return(1);
 	}
 
 	script = command->words->next->word;
+
+	if(strcmp(script,"-h") == 0) {
+		if(which == PARENT) return(0);
+		else {
+puts("usage: . script [args] # Run a script without forking a child process");
+			return(1);
+		}
+	}
 
 	i = 0;
 
@@ -334,38 +421,28 @@ builtin_exit(command,which)
 struct command *command;
 int which;
 {
-	if(command->words->next) 
-		exit(atoi(command->words->next->word));
+	char *arg;
+	int value;
+
+	if(command->words->next)
+		arg = command->words->next->word;
 	else
-		exit(0);
-}
+		arg = NULL;
 
-builtin_clear(command,which)
-struct command *command;
-int which;
-{
-	char *pt;
-
-	if(command->words->next) {
-		pt = command->words->next->word;
-
-		if(strcmp(pt,"-d") == 0) {
-			init_cdhistory();
-			return;
+	if(arg && strcmp(arg,"-h") == 0) {
+		if(which == PARENT) return(0);
+		else {
+			puts("usage: exit [value] # Exit with optional exit value");
+			return(1);
 		}
-
-		if(strcmp(pt,"-h") == 0) {
-			init_history();
-			return;
-		}
-
-		if(strcmp(pt,"-e") == 0 && command->words->next->next) {
-			delete_env(command->words->next->next->word);
-			return;
-		}
-
 	}
 
-	puts("usage: mpsh-clear [-d] [-h] [-e var]");
+	if(arg)
+		value = atoi(arg);
+	else
+		value = 0;
+	
+	exit(value);
 }
+
 

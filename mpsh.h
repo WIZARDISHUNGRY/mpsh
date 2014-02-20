@@ -60,7 +60,7 @@ mpsh.h
 #define FLAG_NICE		0x0080
 #define FLAG_SMP_SYM	0x0100
 #define FLAG_GROUP		0x0200
-#define FLAG_NOTERM		0x0400
+#define FLAG_DISPLAY_TEXT	0x0800
 
 #define FLAG_SETOP				0xFF0000
 #define FLAG_SETOP_UNION		0x010000
@@ -108,7 +108,6 @@ struct command {
 	int file_io_flags;
 	int smp_num;		/* number of processes to generate */
 	int smp_id;			/* id so they all find the same history entry */
-	char display_text;	/* boolean: display history sub notice? */
 	char job_handler;
 	pid_t pid;
 	struct word_list *stderr_filename;
@@ -164,7 +163,6 @@ char *find_alias();
 extern int control_term;
 
 
-
 /* For builtin commands: */
 #define PARENT  0
 #define CHILD   1
@@ -173,11 +171,13 @@ extern int control_term;
 #define INTERACTIVE 1
 #define NONINTERACTIVE 0
 
-#define NORMAL_JOB 0
-#define GROUP_JOB 1
-
 
 int parse_depth;
 #define MAX_PARSE_DEPTH 32
+
+#define ENV_PUBLIC		0
+#define ENV_ALIAS		1
+#define ENV_INTERNAL	2
+#define ENV_HANDLER		3
 
 

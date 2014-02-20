@@ -231,7 +231,6 @@ struct command *init_command() {
 	new->file_io_flags = 0x0000;
 	new->smp_num = 0;
 	new->smp_id = 0;
-	new->display_text = 0;
 	new->job_handler = 0;
 	new->pid = 0;
 	new->stdout_filename = NULL;
@@ -314,16 +313,6 @@ struct word_list *src;
 		strcat(dest,w->word);
 	}
 	return(dest);
-}
-
-char *end_of_string(str)
-char *str;
-{
-	char *pt;
-
-	while(*pt++);
-
-	return(pt);
 }
 
 char *dup_cwd() {

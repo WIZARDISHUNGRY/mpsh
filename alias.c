@@ -78,42 +78,78 @@ struct command *command;
 int which;
 {
 	char *arg;
+	struct alias *a, *next;
 
-	if(!command->words->next) {
-		report_error("Missing alias option",NULL,0,0);
-		return(1);
-	}
+	if(command->words->next) 
+		arg = command->words->next->word;
+	else
+		arg = NULL;
 
-	arg = command->words->next->word;
-
-	if(arg[0] == '-') {
-		if(strcmp(arg,"-s") == 0) {
-			show_aliases();
-			return(1);
-		}
-		if(strcmp(arg,"-q") == 0) {
-			show_aliases_quotes();
-			return(1);
-		}
-
+	if(which == PARENT) {
+		if(arg == NULL) return(0);
 		if(strcmp(arg,"-d") == 0) {
 			if(command->words->next->next)
 				delete_alias(command->words->next->next->word);
 			else
-				report_error("alias -d needs an argument",NULL,0,0);
+				report_error("Missing alias -d argument",NULL,0,0);
+			return(1);
+		}
+		if(strcmp(arg,"-c") == 0) {
+			a=aliases; 
+			while(a) {
+				next = a->next;
+				free(a->text);
+				free(a->name);
+				free(a);
+				a = next;
+			}
+			aliases = NULL;
 			return(1);
 		}
 
-		report_error("unknown argument",arg,0,0);
-		return(1);
+
+		if(arg[0] != '-') {
+			if(index(arg,'=')) {
+				set_alias(arg);
+				return(1);
+			} else {
+				report_error("Syntax error",arg,0,0);
+				return(1);
+			}
+		}
+		return(0);
+	} else {
+
+		if(arg == NULL) {
+			show_aliases();
+			return(1);
+		}
+
+		if(arg[0] == '-') {
+			if(strcmp(arg,"-s") == 0) {
+				show_aliases();
+				return(1);
+			}
+			if(strcmp(arg,"-q") == 0) {
+				show_aliases_quotes();
+				return(1);
+			}
+			if(strcmp(arg,"-h") == 0) {
+				puts("usage: alias            # show aliases");
+				puts("       alias -s         # show aliases");
+				puts("       alias -q         # show aliases, quoted");
+				puts("       alias -d name    # delete [name])");
+				puts("       alias -c         # clear all aliases");
+				puts("       alias name=value # set command alias [name] to [value]");
+				return(1);
+			}
+
+			report_error("Unknown alias option",arg,0,0);
+			return(1);
+		}
 	}
 
-	if(index(arg,'=')) {
-		set_alias(arg);
-		return(1);
-	}
-
-	report_error("syntax error",arg,0,0);
+	report_error("Syntax error",arg,0,0);
 	return(1);
 }
 
@@ -162,7 +198,7 @@ char *arg;
 		prev = a;
 	}
 
-	report_error("alias not found",arg,0,0);
+	report_error("Alias not found",arg,0,0);
 }
 
 set_alias(arg)
@@ -208,7 +244,6 @@ char *find_alias(arg)
 char *arg;
 {
 	struct alias *a;
-	int len;
 
 	for(a=aliases; a; a=a->next)
 		if(strcmp(arg,a->name) == 0)

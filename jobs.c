@@ -62,7 +62,10 @@ jobs.c:
 #endif
 
 #ifdef LINUX
-#include <wait.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <sys/time.h>
+#include <sys/resource.h>
 #endif
 
 #ifdef BSD
@@ -77,8 +80,13 @@ jobs.c:
 
 #include "mpsh.h"
 
+#include "history.h"
+extern struct history_entry **history;
+
+
 
 struct job {
+	int display;
 	char *text;
 	pid_t pid;
 	pid_t *pids;
@@ -87,7 +95,6 @@ struct job {
 	int smp_id;
 	int smp;
 	int last_fg;
-	int group;
 } ;
 
 
@@ -98,15 +105,16 @@ int current_job_pid;
 int default_bg_job;
 
 
+
 init_jobs() {
 	int i;
 
 	for(i=0; i<JOB_ENTRIES; i++) {
+		jobs[i].display = 0;
 		jobs[i].pid = 0;
 		jobs[i].pids = NULL;
 		jobs[i].smp_id = 0;
 		jobs[i].last_fg = 0;
-		jobs[i].group = 0;
 	}
 
 	current_job_pid = -1;
@@ -129,18 +137,13 @@ struct command *command;
 
 	found_slot:
 
+	jobs[j].display = 1;
 	jobs[j].text = strdup(command->text);
 	jobs[j].pid = command->pid;
 	jobs[j].history = add_history_entry(command);
 	jobs[j].running = 1;
 	jobs[j].last_fg = 0;
 	jobs[j].smp = command->smp_num;
-
-
-	if(command->flags & FLAG_NOTERM)
-		jobs[j].group = 1;
-	else
-		jobs[j].group = 0;
 
 	return(j);
 }
@@ -161,6 +164,7 @@ struct command *command;
 
 	if(j == -1) return(-1);
 
+	jobs[j].display = 1;
 	jobs[j].smp_id = command->smp_id;
 	jobs[j].pids = (pid_t *) malloc(sizeof(pid_t)*(command->smp_num+1));
 	jobs[j].pids[0] = command->pid;
@@ -179,37 +183,46 @@ struct command *command;
 	return(j);
 }
 
-show_jobs()
+show_jobs(arg,job)
+char *arg;
+int job;
 {
-	int j;
-	int i;
-	char bg_status;
-	int second_bg_job;
+	char *fmt;
+	int *widths;
 
-	second_bg_job = get_second_bg_job();
-
-	for(j=0; j<JOB_ENTRIES; j++) {
-		if(j == default_bg_job) bg_status = '+';
-		else if(j == second_bg_job) bg_status = '-';
-		else bg_status = ' ';
-
-		if(jobs[j].pids) {
-			for(i=0; jobs[j].pids[i]; i++) ;
-			printf("%2d %c%c %s (%d/%d)\n",j,
-				jobs[j].running ? 'R' : 'S', bg_status,
-				jobs[j].text,i,jobs[j].smp);
-		} else if(jobs[j].pid)
-			printf("%2d %c%c %s\n",j,
-				jobs[j].running ? 'R' : 'S', bg_status,
-				jobs[j].text);
+	if(arg == NULL) {
+		fmt = get_env("mpsh-jobs-disp");
+	} else {
+		if(strcmp(arg,"-s") == 0) 
+			fmt = get_env("mpsh-jobs-disp");
+		else if(strcmp(arg,"-l") == 0) 
+			fmt = get_env("mpsh-jobs-disp-l");
+		else {
+			if(arg[0] == '-') {
+				report_error("Unknown jobs option",arg,0,0);
+				return(1);
+			}
+			fmt = arg;
+		}
 	}
 
-}
+	widths = (int *) malloc(sizeof(int)*strlen(fmt));
 
+	if(fmt[0] == '\0') {
+		report_error("Null jobs format string",NULL,0,0);
+		return;
+	}
+
+	if(show_jobs_list(fmt,widths,1,job))
+		show_jobs_list(fmt,widths,0,job);
+
+	free(widths);
+}
 
 delete_job(j)
 int j;
 {
+	jobs[j].display = 0;
 	jobs[j].pid = 0;
 	jobs[j].smp_id = 0;
 	if(jobs[j].pids) {
@@ -223,7 +236,7 @@ int j;
 	return;
 }
 
-#ifdef BSD
+#if defined BSD || defined LINUX
 
 wait_job(job) /* BSD VERSION */
 int job;
@@ -249,7 +262,7 @@ int job;
 
 	signal(SIGTTIN,SIG_IGN);
 	signal(SIGTTOU,SIG_IGN);
-	if(!jobs[job].group)
+	if(isatty(fileno(stdout)))
 		tcsetpgrp(control_term,getpgrp());
 
 	current_job_pid = -1;
@@ -296,7 +309,8 @@ check_for_job_exit() { /* BSD VERSION */
 						for(k=i; jobs[job].pids[k]; k++) 
 							jobs[job].pids[k] = jobs[job].pids[k+1];
 						if(jobs[job].pids[0] == 0) {
-							fprintf(stderr,"Job %s %s.\n",jobs[job].text,
+							if(jobs[job].display)
+								fprintf(stderr,"Job %s %s.\n",jobs[job].text,
 								WIFSIGNALED(st) ?
 								"killed" : "exited");
 							add_history_details(jobs[job].history,st,&ruse);
@@ -308,8 +322,9 @@ check_for_job_exit() { /* BSD VERSION */
 				}
 			} else if(jobs[job].pid == pid) {
 				if(!WIFSTOPPED(st)) {
-					fprintf(stderr,"Job %s %s.\n",jobs[job].text,
-						WIFSIGNALED(st) ? "killed" : "exited");
+					if(jobs[job].display)
+						fprintf(stderr,"Job %s %s.\n",jobs[job].text,
+							WIFSIGNALED(st) ? "killed" : "exited");
 					add_history_details(jobs[job].history,st,&ruse);
 					delete_job(job);
 					goto end;
@@ -365,7 +380,7 @@ int job;
 
 	signal(SIGTTIN,SIG_IGN);
 	signal(SIGTTOU,SIG_IGN);
-	if(!jobs[job].group)
+	if(isatty(fileno(stdout)))
 		tcsetpgrp(control_term,getpgrp());
 
 	current_job_pid = -1;
@@ -415,10 +430,11 @@ check_for_job_exit() { /* NON-BSD VERSION */
 						for(k=i; jobs[job].pids[k]; k++) 
 							jobs[job].pids[k] = jobs[job].pids[k+1];
 						if(jobs[job].pids[0] == 0) {
-							fprintf(stderr,"Job %s %s.\n",jobs[job].text,
-								infop.si_code == CLD_KILLED ||
-								infop.si_code == CLD_DUMPED ?
-								"killed" : "exited");
+							if(jobs[job].display)
+								fprintf(stderr,"Job %s %s.\n",jobs[job].text,
+									infop.si_code == CLD_KILLED ||
+									infop.si_code == CLD_DUMPED ?
+									"killed" : "exited");
 							add_history_details(jobs[job].history,&infop);
 							delete_job(job);
 						} else
@@ -427,9 +443,10 @@ check_for_job_exit() { /* NON-BSD VERSION */
 					}
 				}
 			} else if(jobs[job].pid == pid) {
-				fprintf(stderr,"Job %s %s.\n",jobs[job].text,
-					infop.si_code == CLD_KILLED ||
-					infop.si_code == CLD_DUMPED ? "killed" : "exited");
+				if(jobs[job].display)
+					fprintf(stderr,"Job %s %s.\n",jobs[job].text,
+						infop.si_code == CLD_KILLED ||
+						infop.si_code == CLD_DUMPED ? "killed" : "exited");
 				add_history_details(jobs[job].history,&infop);
 				delete_job(job);
 				goto end;
@@ -493,25 +510,32 @@ struct command *curr;
 	struct word_list *w;
 	struct word_list *later_words, *prev;
 	int job;
-	char buff[32];
+	char *buff;
+	char buff_short[32];
 	int i;
+	char *pt, *arg;
+
+	buff = buff_short;
 
 	while(curr) {
-		w = curr->words->next;
+		w = curr->words;
 		while(w) {
 			if(w->word && w->word[0] == '%') {
+				pt = w->word;
+				arg = index(pt,'.');
+				if(arg) *arg++ = '\0';
 				/* Expand job number. */
-				if(w->word[1] == '%') { /* default job */
+				if(pt[1] == '%') { /* default job */
 					job = default_bg_job;
-				} else if(w->word[1] == '-') { /* next default job */
+				} else if(pt[1] == '-') { /* next default job */
 					job = get_second_bg_job();
-				} else if(isdigit(w->word[1])) {
-					job = atoi(w->word+1);
+				} else if(isdigit(pt[1])) {
+					job = atoi(pt+1);
 				} else {
-					job = find_job_by_name(w->word+1);
+					job = find_job_by_name(pt+1);
 				}
-				if(job != -1 && jobs[job].pid != 0) {
-					if(jobs[job].pids) {
+				if(job != -1 && jobs[job].pid != 0 && jobs[job].display) {
+					if(!arg && jobs[job].pids) {
 						later_words = w->next;
 						for(i=0; jobs[job].pids[i]; i++) {
 							sprintf(buff,"%d",jobs[job].pids[i]);
@@ -522,7 +546,15 @@ struct command *curr;
 						}
 						prev->next = later_words;
 					} else {
-						sprintf(buff,"%d",jobs[job].pid);
+						if(arg) {
+							if(strcmp(arg,"hist") == 0)
+								sprintf(buff,"%d",jobs[job].history);
+							if(strcmp(arg,"dir") == 0)
+								buff = history[jobs[job].history]->dir;
+							if(strcmp(arg,"text") == 0)
+								buff = jobs[job].text;
+						} else
+							sprintf(buff,"%d",jobs[job].pid);
 						string_to_word(buff,&w);
 					}
 				}
@@ -545,12 +577,12 @@ char *str;
 
 	len = strlen(str);
 	for(job=0; job<JOB_ENTRIES; job++) {
-		if(jobs[job].pid &&
+		if(jobs[job].pid && jobs[job].display &&
 		strncmp(str,jobs[job].text,len) == 0) return(job);
 	}
 
 	for(job=0; job<JOB_ENTRIES; job++) {
-		if(jobs[job].pid != 0) {
+		if(jobs[job].pid != 0 && jobs[job].display) {
 			cmp = jobs[job].text;
 			len2 = strlen(cmp)-1;
 			for(i=1; i<len2; i++)
@@ -565,17 +597,49 @@ struct command *command;
 int which;
 {
 	int j;
+	int pid;
+	char *arg;
 
-	if(command->words) {
-		j = atoi(command->words->word);
-		while(jobs[j].pid != 0)
-			check_for_job_exit();
+	if(command->words->next)
+		arg = command->words->next->word;
+	else
+		arg = NULL;
+
+	if(arg && strcmp(arg,"-h") == 0) {
+		if(which == PARENT) return(0);
+		else {
+			puts("usage: wait      # Wait for all jobs to exit");
+			puts("       wait %job # Wait for a particular job to exit");
+			return(1);
+		}
+	}
+
+	if(arg && !isdigit(arg[0])) {
+		report_error("Syntax error",arg,0,0);
+		return(1);
+	}
+
+	if(arg) {
+		pid = atoi(arg);
+		if(pid == 0) {
+			report_error("Unknown job",arg,0,0);
+			return(1);
+		}
+		for(j=0; j<JOB_ENTRIES; j++) {
+			if(jobs[j].pid == pid && jobs[j].display) {
+				while(jobs[j].pid != 0)
+					check_for_job_exit();
+				return(1);
+			}
+		}
+		report_error("Unknown job",arg,0,0);
 	} else {
 		for(j=0; j<JOB_ENTRIES; j++) {
-			while(jobs[j].pid != 0)
+			while(jobs[j].pid != 0 && jobs[j].display)
 				check_for_job_exit();
 		}
 	}
+	return(1);
 }
 
 inc_last_fg() {
@@ -598,7 +662,7 @@ find_bg_job() {
 	found = -1;
 
 	for(j=0; j<JOB_ENTRIES; j++) {
-		if(jobs[j].pid != 0) {
+		if(jobs[j].pid != 0 && jobs[j].display) {
 			if(jobs[j].last_fg > 0 && jobs[j].last_fg < lowest) {
 					lowest = jobs[j].last_fg;
 					found = j;
@@ -620,7 +684,7 @@ get_second_bg_job() {
 	found = -1;
 
 	for(j=0; j<JOB_ENTRIES; j++) {
-		if(jobs[j].pid != 0) {
+		if(jobs[j].pid != 0 && jobs[j].display) {
 			if(
 				jobs[j].last_fg > 0 &&
 				jobs[j].last_fg < lowest &&
@@ -646,7 +710,8 @@ number_of_jobs() {
 
 	for(j=0; j<JOB_ENTRIES; j++) {
 		if(jobs[j].pid != 0 || jobs[j].pids != NULL) {
-			count++;
+			if(jobs[j].display)
+				count++;
 		}
 	}
 
@@ -682,4 +747,301 @@ int original, new;
 	}
 }
 
+show_detailed_job(j)
+int j;
+{
+	struct history_entry *hp;
+	struct job *jp;
+	time_t tt;
+	char buff[32];
+	int i;
+
+	if(j == -1) return;
+	if(!jobs[j].display) return;
+
+	jp = &jobs[j];
+	hp = history[jp->history];
+	printf("Job Entry:     %d\n",j);
+	printf("History:       %d\n",jp->history);
+
+	if(jp->pids) {
+		printf("Process ID:    ");
+		for(i=0; jp->pids[i]; i++)
+			printf("%d ",jp->pids[i]);
+		puts("");
+	} else printf("Process ID:    %d\n",jp->pid);
+
+	printf("Command:       %s\n",jp->text);
+	printf("Directory:     %s\n",hp->dir);
+	printf("Status:        %s\n",jobs[j].running ? "Running":"Stopped");
+	printf("Foreground:    %d\n",jp->last_fg);
+	printf("Started:       %s\n",hp->time_start);
+	time(&tt);
+	format_time(tt - hp->timestamp,buff);
+	printf("Elapsed:       %s\n",buff);
+
+	if(jobs[j].pids) {
+		for(i=0; jobs[j].pids[i]; i++) ;
+		printf("Multi-Process: %d/%d\n",i,jp->smp);
+	} else {
+		printf("Multi-Process: 1/1\n");
+	}
+
+}
+
+show_jobs_list(fmt,widths,calculate,job)
+char *fmt;
+int *widths;
+int calculate;
+int job;
+{
+	int i;
+	struct history_entry *hp;
+	struct job *jp;
+	char buff[256];
+	int len;
+	int field;
+	int fields;
+	char *pt;
+	char *output;
+	int w;
+	time_t tt;
+	int j;
+	int second_bg_job;
+
+	second_bg_job = get_second_bg_job();
+
+	fields = strlen(fmt);
+
+	if(calculate) {
+		output = NULL;
+		for(field=0; field<fields; field++) 
+			widths[field] = 0;
+	} else { 
+		/* Allocate output buffer based on widths of all fields */
+		len = 0;
+		for(i=0; i<fields; i++) len += widths[i] +1;
+		output = malloc(len+2);
+	}
+
+	/*
+
+		n - job number
+		h - history number
+		c - command
+		C - command 20 char
+		e - elapsed
+		t - start time
+		d - directory
+		D - directory 20 char
+		s - one-letter status
+		S - long status
+		f - one-letter fg default
+		F - long fg default
+		m - smp count (optional)
+		M - smp count
+		p - pid
+
+	*/
+
+	for(j=0; j<JOB_ENTRIES; j++) {
+		if(job == -1 || job == j)
+		if(jobs[j].display) {
+			jp = &jobs[j];
+			hp = history[jp->history];
+			if(!calculate) output[0] = '\0';
+			for(field=0; field<fields; field++) {
+				switch(fmt[field]) {
+					case 'n':
+						sprintf(buff,"%d",j);
+						pt = buff;
+						break;
+					case 'h':
+						sprintf(buff,"%d",jp->history);
+						pt = buff;
+						break;
+					case 'c':
+					case 'C':
+						pt = jp->text;
+						break;
+					case 'r':
+						/* status */
+						sprintf(buff,"%c%c",
+							j == default_bg_job ? '+' :
+							j == second_bg_job ? '-' : ' ',
+							jobs[j].running ? 'R' : 'S');
+						pt = buff;
+						break;
+					case 'R':
+						/* longer status */
+						pt = jobs[j].running ? "Running" : "Stopped";
+						break;
+					case 'e':
+						time(&tt);
+						format_time(tt - hp->timestamp,buff);
+						pt = buff;
+						break;
+					case 't':
+						sprintf(buff,"%.8s",hp->time_start+11);
+						pt = buff;
+						break;
+					case 'd':
+					case 'D':
+						pt = hp->dir;
+						break;
+					case 'f': /* fg status */
+						sprintf(buff,"%c",
+							j == default_bg_job ? '+' :
+							j == second_bg_job ? '-' : ' ');
+						pt = buff;
+						break;
+					case 'F': /* full fg status number */
+						sprintf(buff,"%d",jp->last_fg);
+						pt = buff;
+						break;
+					case 'm': /* optional smp numbers */
+						if(jobs[j].pids) {
+							for(i=0; jobs[j].pids[i]; i++) ;
+							sprintf(buff,"(%d/%d)",i,jp->smp);
+							pt = buff;
+						} else {
+							pt = "";
+						}
+						break;
+					case 'M': /* smp numbers */
+						if(jobs[j].pids) {
+							for(i=0; jobs[j].pids[i]; i++) ;
+							sprintf(buff,"%d/%d",i,jp->smp);
+							pt = buff;
+						} else {
+							pt = "1/1";
+						}
+						break;
+					case 'p': /* PID */
+						sprintf(buff,"%d",jp->pid);
+						pt = buff;
+						break;
+					default:
+						report_error("Unknown jobs field",NULL,fmt[field],0);
+						return(0);
+				}
+				if(calculate) {
+					w = strlen(pt);
+					if(w > widths[field]) widths[field] = w;
+				} else {
+					cat_jobs_output(fmt[field],widths[field],output,pt);
+				}
+			}
+			if(!calculate) {
+				puts(output);
+			}
+		}
+	}
+
+	if(output) free(output);
+	return(1);
+}
+
+cat_jobs_output(f,w,out,pt)
+int f;
+int w;
+char *out;
+char *pt;
+{
+	char *output;
+
+	output = out+strlen(out);
+
+	if(out != output) {
+		*output++ = ' ';
+		*output = '\0';
+	}
+
+	switch(f) {
+		/* Left justified, any length: */
+		case 'c':
+			sprintf(output,"%s",pt);
+			break;
+		/* Left justified, limited to 20 char: */
+		case 'C':
+			if(w < 20)
+				sprintf(output,"%-*s",w,pt);
+			else
+				sprintf(output,"%-20.20s",pt);
+			break;
+		case 'D':
+			if(w < 20)
+				sprintf(output,"%-*s",w,pt);
+			else {
+				int len;
+				len = strlen(pt) - 20;
+				if(len < 0) len = 0;
+				sprintf(output,"%-20.20s",pt+len);
+			}
+			break;
+		/* Left justified: */
+		case 'd':
+			sprintf(output,"%-*s",w,pt);
+			break;
+		/* Right justified */
+		default:
+			sprintf(output,"%*s",w,pt);
+			break;
+	}
+}
+
+delete_job_entry(arg)
+char *arg;
+{
+	int j;
+	int pid;
+	int i;
+
+	pid = atoi(arg);
+
+	for(j=0; j<JOB_ENTRIES; j++) {
+		if(jobs[j].display) {
+			if(jobs[j].pids) {
+				for(i=0; jobs[j].pids[i]; i++)
+					if(jobs[j].pids[i] == pid) {
+						jobs[j].display = 0;
+						return;
+				}
+			} else if(jobs[j].pid == pid) {
+				jobs[j].display = 0;
+				return;
+			}
+		}
+	}
+
+	report_error("Job not found",arg,0,0);
+}
+
+pid_to_job(arg)
+char *arg;
+{
+	int pid;
+	int job;
+	int i;
+
+	pid = atoi(arg);
+
+	for(job=0; job<JOB_ENTRIES; job++) {
+		if(jobs[job].pid) {
+			if(jobs[job].pid == pid) {
+				if(jobs[job].display)
+					return(job);
+				else
+					return(-1);
+			}
+		}
+		if(jobs[job].pids) {
+			/* Search through all PIDs */
+			for(i=0; jobs[job].pids[i]; i++)
+				if(jobs[job].pids[i] == pid)
+					return(job);
+		}
+	}
+	return(-1);
+}
 

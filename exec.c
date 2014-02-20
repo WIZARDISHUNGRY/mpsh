@@ -97,7 +97,7 @@ struct command *command;
 		if(command->flags & FLAG_BATCH) {
 			hist = add_history_entry(command);
 			ret = call_batch(command);
-#ifdef BSD
+#if defined BSD || defined LINUX
 			if(command->job_handler) add_history_details(hist,0,NULL);
 #else
 			if(command->job_handler) add_history_details(hist,NULL);
@@ -188,7 +188,7 @@ int pipe_in, pipe_out;
 
 		if((command->flags & FLAG_BACK) == 0x00) {
 			signal(SIGTTOU,SIG_IGN);
-			if(!(command->flags & FLAG_NOTERM)) {
+			if(isatty(fileno(stdout))) {
 				pgrp = getpid();
 				setpgid(pgrp,pgrp);
 				tcsetpgrp(control_term,pgrp);
@@ -322,9 +322,9 @@ int pipe_in, pipe_out;
 			pt = command->words->word+1;
 			pt[strlen(pt)-1] = '\0';
 			if(command->flags & FLAG_BACK)
-				parse_and_run(pt,NONINTERACTIVE,GROUP_JOB);
+				parse_and_run(pt,NONINTERACTIVE);
 			else
-				parse_and_run(pt,INTERACTIVE,GROUP_JOB);
+				parse_and_run(pt,INTERACTIVE);
 			exit(0);
 		}
 
@@ -481,7 +481,7 @@ char *text, *comm;
 	if(pid == 0) { /* child. */
 		dup2(pipes[0],fileno(stdin));
 		close(pipes[1]);
-		parse_and_run(comm,NONINTERACTIVE,NORMAL_JOB);
+		parse_and_run(comm,NONINTERACTIVE);
 		_exit(1);
 	} else { /* Parent process */
 		close(pipes[0]);
@@ -533,7 +533,7 @@ char *text_command;
 		devnull = open("/dev/null",O_WRONLY);
 		dup2(devnull,fileno(stdin));
 		*/
-		parse_and_run(text_command,NONINTERACTIVE,NORMAL_JOB);
+		parse_and_run(text_command,NONINTERACTIVE);
 		_exit(1);
 	} else { /* Parent process */
 		close(pipes[1]);
@@ -565,7 +565,6 @@ char *text_command;
 	int pipes[2];
 	int pid;
 	char *output;
-	siginfo_t infop;
 	int i;
 	int ret;
 
@@ -588,7 +587,7 @@ char *text_command;
 		devnull = open("/dev/null",O_WRONLY);
 		dup2(devnull,fileno(stdin));
 		*/
-		parse_and_run(text_command,NONINTERACTIVE,NORMAL_JOB);
+		parse_and_run(text_command,NONINTERACTIVE);
 		exit(1);
 	} else { /* Parent process */
 		close(pipes[1]);

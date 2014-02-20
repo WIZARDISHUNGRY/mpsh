@@ -1,7 +1,5 @@
 
-							 Introduction
-
-INTRODUCTION TO MPSH (Version 1.3, 2014-01-17)
+Introduction to mpsh (Version 1.4, 2014-02-20)
 
 mpsh is an experimental command interpreter for Unix systems written
 by Dave Fischer at the Center for Computational Aesthetics and
@@ -10,12 +8,16 @@ distributed under the 3-clause BSD license.
 "mpsh" stands for "multi-processor shell", because one of its core
 features is the ability to split certain jobs into multiple processes.
 
-The major features are:
+The major interesting features are:
 
-   Job Handlers
-   Multiprocess Jobs
-   Environment Variable Command Aliases
-   Set Theory Operators
+Job Handlers
+Multiprocess Jobs
+Environment Variable Command Aliases
+Set Theory Operators
+
+mpsh command history and job control features provide access to much
+more than just command repetition and process ID. See the command
+history section and jobs section for details.
 
 								Theory
 
@@ -117,15 +119,46 @@ The primary mpsh development machine is a Sun E3500 running Solaris 8.
 (In 2013. Really.) Porting is done on an Origin-2000, a Raspberry Pi,
 and an assortment of laptops.
 
+							Background Jobs
+
+In addition to simply running jobs in the background:
+
+	mpsh$ command args &
+
+mpsh allows a number of options to background jobs, specified after
+the ampersand.
+
+Any letter will be assumed to be a job handler (see job handler
+section):
+
+	mpsh$ command args &x
+
+A number, star, or exclamation point specify a multi-process job (see
+multi-process job section):
+
+	mpsh$ command args &4
+
+Minus signs causes a job to run at lower priority. Multiple minuses
+increase the "niceness" level. The actual value is controlled by the
+mpsh-nice environment variable.
+
+	mpsh$ command args &--
+
+All of these options can be combined.
+
 							 Job Handlers
 
 Job handlers allow mpsh to send a command to some external program to
 handle instead of executing it directly. For example: sending jobs to
 batch queues, execution on remote nodes, delayed execution via
-/bin/at, run a command in a new x-term window, etc. All job handlers
-are user configured. The handler is specified by a single letter,
-which is then the argument after "&". The handler can be given
-arguments as well. Here are some examples:
+/bin/at, running a command in a new x-term window, etc. All job
+handlers are user configured. The handler is specified by a single
+letter, which is then the argument after "&". It is configured by
+setting an environment variable handler-x where x is the letter for
+the handler you want to configure. (Since this is an environment
+variable command alias, the value must start with an exclamation
+point. See Environment Variable Command Aliases section for more
+details.) The handler can be given arguments as well. Some examples:
 
 Configure job handler "q" to submit job to a batch queue, via the
 command "batch-submit". When a command is run with the "&q" option,
@@ -147,22 +180,26 @@ Handing the command off to the job handler is not done in the
 background (unless the job handler has a '&' at the end of the line),
 and once it's accomplished, it is not listed as a running job.
 
+Configured job handlers can be displayed with setenv:
+
+	mpsh$ setenv -sh
+	mpsh$ setenv -qh
+
 						   Multiprocess Jobs
 
-Multiprocess Jobs - split up a command into multiple parallel
-instances.
-
-In the basic form, this lets you split up a command with many
-arguments into [n] separate jobs, each with 1/n of the argument list.
+You can split a command into multiple processes by specifying a
+numeric argument after the ampersand: &[n]. This splits up a command
+with many arguments into [n] separate jobs, each with 1/n of the
+argument list, or [n] jobs for [n] arguments if you specify &*.
 
 So, this command:
 
-	mpsh$ command arg1 arg2 arg3 arg4 &2
+	mpsh$ command one two three four &2
 
 will execute two seperate processes:
 
-	command arg1 arg3
-	command arg2 arg4
+	command one three
+	command two four
 
 Execute a separate process per jpg file:
 
@@ -172,23 +209,22 @@ Execute a separate process per file, and submit each to a batch queue:
 
 	mpsh$ gen-thumbnails *.jpg &q*
 
-In the "symmetric" form "&n!", you can generate parallel instances
+In the "symmetric" form &n!, you can generate parallel instances
 regardless of the argument list, with the entire argument list
 duplicated for each process:
 
-	mpsh$ command arg1 arg2 arg3 arg4 &2!
+	mpsh$ command one two three four &2!
 
 will execute two processes, each with the full arguments:
 
-	command arg1 arg2 arg3 arg4
-	command arg1 arg2 arg3 arg4
+	command one two three four
+	command one two three four
 
-("&*!" will still determine the number of instances to execute based
-on the argument list, but each instance will get all of the
-arguments.)
+(&*! will still determine the number of instances to execute based on
+the argument list, but each instance will get all of the arguments.)
 
-When executing multiprocess jobs, the "jobs" command will show how
-many processes the job was split into, and how many are still running.
+When executing multiprocess jobs, the "jobs" command can show how many
+processes the job was split into, and how many are still running.
 Also, job PID substitution ("kill -9 %gen") will include the PIDs for
 all processes that are still running.
 
@@ -196,6 +232,61 @@ If you want to use a multiprocess job in a pipeline, you have to use
 command grouping:
 
 	mpsh$ command | [ command arg &n ] | command
+
+						 Set Theory Operations
+
+mpsh can perform various set theory operations on the output of
+programs, specified by special characters after pipes. Seperate lines
+of the text are parsed as set elements. For instance: the intersection
+of two commands includes only the lines that appear in the output of
+both commands:
+
+	mpsh$ ls dir1 |^ ls dir2
+
+(Bear in mind that this follows set theory, not simple text filtering,
+so duplicates and original order are not maintained.)
+
+You can treat the text output of any command as a set, or enter sets
+directly using curly braces (but with spaces instead of commas):
+
+	mpsh$ { red green blue } |^ { fast red { dog cat gorilla } }
+
+	mpsh$ ls |- { *.o }
+
+The basic set theory operations are:
+
+   Union:                  |U 
+   Intersection:           |^
+   Difference:             |\
+   Synonym for difference: |-
+   Symmetric difference:   |o
+
+You can also execute commands conditionally based on set theory tests.
+
+If A is a subset of B, execute C:
+	mpsh$ command-a |< command-b ; command-c
+
+If B is a subset of A, execute C:
+	mpsh$ command-a |> command-b ; command-c
+
+If A equals B, execute C:
+	mpsh$ command-a |= command-b ; command-c
+
+	mpsh$ { red } |< { red green blue } ; echo red is a subset of rgb.
+	red is a subset of rgb.
+
+Some more examples - take the intersection of *.c with the union of
+the outputs of command1 and command2, then send that to the sort
+command:
+
+	mpsh$ command1 |U command2 |^ { *.c } | sort
+
+Open gimp with all the jpg's in the current directory, except *t.jpg:
+
+	mpsh$ gimp ( { *.jpg } |- { *t.jpg } )
+
+The set theory operators are a bit superficial. Sets are deduplicated
+but subsets aren't, etc. Does not support infinite sets.
 
 						 Environment Variables
 
@@ -207,9 +298,13 @@ Expand with a dollar sign:
 
 	mpsh$ echo $TERM
 
-Displayed with the -s option:
+Displayed in human-friendly format with the -s (show) option:
 
 	mpsh$ setenv -s
+
+And in computer-readable format with the -q (show quoted) option:
+
+	mpsh$ setenv -q
 
 And deleted with the -d option:
 
@@ -218,10 +313,10 @@ And deleted with the -d option:
 				 Environment Variable Command Aliases
 
 An environment variable can be set to a command alias by starting it
-with an exclamation point. The value of which is then executed every
-time the environment variable is evaluated. This alleviates the need
-for certain "magic" environment variables, and allows for interesting
-new experiments.
+with an exclamation point. The text of the variable is then executed
+every time the environment variable is evaluated. This alleviates the
+need for certain "magic" environment variables, and allows for
+interesting new experiments.
 
 For example - OLDDIR is a simple environment variable, set to the path
 of a particular directory, which it will always refer to when
@@ -231,24 +326,27 @@ expanded. CWD is an environment variable command alias, set to the
 	mpsh$ cd /tmp
 	mpsh$ setenv OLDDIR=(pwd)
 	mpsh$ setenv CWD="!pwd"
+	mpsh$ echo $OLDDIR $CWD
+	/tmp /tmp
 	mpsh$ cd /usr
 	mpsh$ echo $OLDDIR $CWD
 	/tmp /usr
 
-Read the X Windows cut buffer (adjust for your computer setup):
+Read the X Windows cut buffer:
 
-	mpsh$ setenv x="!rsh desktop xcb -p 0 -display $DISPLAY"
+	mpsh$ setenv x="!xcb -p 0"
 
 Display the date in the prompt string:
 
 	mpsh$ setenv mpsh-prompt="!echo (date '+%l:%M') 'mpsh% '"
 
-Command alias variables can be displayed with the -c option:
+Command alias variables can be displayed with the -sa or -qa option:
 
-	mpsh$ setenv -c
+	mpsh$ setenv -sa
+	mpsh$ setenv -qa
 
-They are deleted with the -d option, just like normal environment
-variables.
+Environment variable command aliases are deleted with the -d option,
+just like normal environment variables.
 
 				Environment Variable Internal Settings
 
@@ -263,17 +361,14 @@ The internal settings are:
    mpsh-cdhistory - Show directory history substitution?
    mpsh-hist-disp - History display format
    mpsh-hist-disp-l - History "-l" display format
+   mpsh-jobs-disp - Jobs display format
+   mpsh-jobs-disp-l - Jobs "-l" display format
    mpsh-umask - umask, in octal
    mpsh-eof-exit - Exit on EOF?
    mpsh-nice - nice value for "&-[-]"
-
-If you set mpsh-nice=5, then "command &-" will run at nice level 5,
-"command &---" at nice level 15, etc. The default mpsh-nice value is
-10.
-
    mpsh-error-level - error verbosity level 0 - 3
 
-Error messages are formatted:
+For the four verbosity levels, error messages are formatted:
 
    0: none
    1: error
@@ -296,20 +391,29 @@ will expand on the command line:
 
 Show mpsh internal settings:
 
-	mpsh$ setenv -i
+	mpsh$ setenv -si
+	mpsh$ setenv -qi
 
 								Aliases
 
-Alias - create, show, or delete aliases.
-
 An alias is shorthand for a command. Unlike shell scripts, an alias
-can include commands that you want to run in the shell's main process,
-like changing directory, or setting or deleting internal data
-structures like environment variables.
+can include commands that can't be run in a subprocess, like changing
+directory, or setting or deleting internal data structures like
+environment variables.
+
+Create alias:
 
 	mpsh$ alias name="command etc"
+
+Show existing aliases, formatted for readability, or quoted:
+
 	mpsh$ alias -s
+	mpsh$ alias -q
+
+Delete one alias, or clear all aliases:
+
 	mpsh$ alias -d name
+	mpsh$ alias -c
 
 Any arguments to an alias will be appended to the expanded command.
 However, if you want to do something more complex with arguments, you
@@ -319,123 +423,35 @@ the command's alias via environment variables:
 	mpsh$ alias cdnew=". $HOME/mpsh/cdnew"
 	mpsh$ cat $HOME/mpsh/cdnew
 	mkdir $1
-cd $1
+	cd $1
 	mpsh$ cdnew zardoz
-
-						 Command Substitution
-
-Command substitution is specified by parenthesis:
-
-	mpsh$ echo (date) (command | sort | etc (etc))
-
-This is about the only time mpsh isn't extremely demanding of
-whitespace.
-
-						   Command Grouping
-
-Command grouping is accomplished in mpsh with square brackets. The
-sequence between the brackets is executed in a sub-shell.
-
-	mpsh$ [ cd src ; tar cf - . ] | [ cd /backup/src ; tar xf - ]
-
-						 Set Theory Operations
-
-mpsh can perform various set theory operations on the output of
-programs. Seperate lines of the text are parsed as set elements. For
-instance: the intersection of two commands includes only the lines
-that appear in the output of both commands:
-
-	mpsh$ ls dir1 |^ ls dir2
-
-(Bear in mind that this follows set theory, not simple text filtering,
-so duplicates and original order are not maintained.)
-
-You can enter sets directly using curly braces (but with spaces
-instead of commas):
-
-	mpsh$ { red green blue } |^ { fast red { dog cat gorilla } }
-
-	mpsh$ ls |- { *.o }
-
-The basic set theory operations are:
-
-   Union:                  |U 
-   Intersection:           |^
-   Difference:             |\
-   Synonym for difference: |-
-   Symmetric difference:   |o
-
-You can also execute commands conditionally based on set theory tests:
-
-	mpsh$ command-a |[<=>] command-b ; conditional-command
-
-If A is a subset of B: |<
-If B is a subset of A: |>
-If A equals B: |=
-
-	mpsh$ { red } |< { red green blue } ; echo red is a subset of rgb.
-	red is a subset of rgb.
-
-Some more examples - take the intersection of *.c with the union of
-the outputs of command1 and command2, then send that to the sort
-command:
-
-	mpsh$ command1 |U command2 |^ { *.c } | sort
-
-Open gimp with all the jpg's in the current directory, except *t.jpg:
-
-	mpsh$ gimp ( { *.jpg } |- { *t.jpg } )
-
-The set theory operators are a bit superficial. Sets are deduplicated
-but subsets aren't, etc. Does not support infinite sets.
-
-							IO Redirection
-
-IO redirection is the same for pipes and files. The options are:
-
-e - stderr
-b - both (stdout & stderr)
-a - append
-
-	mpsh$ command --help |e more
-	mpsh$ command >a data.out >e err.out
-
-Because of these options, whitespace is essential. The following will
-NOT be parsed as intended:
-
-	mpsh$ command >filename
-
-The whitespace before the filename is required:
-
-	mpsh$ command > filename
-
-							 Conditionals
-
-Conditionals are specified as an option after the command seperator:
-
-	mpsh$ true ;? echo true
-	mpsh$ false ;! echo false
-
-See also the Set Theory section, for set theory conditionals.
 
 							Command History
 
-Command history works about the same as in most Unix shells, but with
-some extra features. You can repeat previous command by name, by
-number, or most recent. "pattern" will match the beginning of a
-command, while "*pattern" will match anywhere in the string.
+Command history lets you repeat a previous command, access data about
+a previous command, or display a list of previous commands.
+
+You reference a previous command by starting a command with an
+exclamation point, and either the first letters of the command, a star
+and string from anywhere in the command, the number of the history
+entry, or blank for the last command:
 
 	mpsh$ !command
 	mpsh$ !*arg
-	mpsh$ ![n]
+	mpsh$ !n
 	mpsh$ !
 
-You can also retrieve history information with: !command.field where
-field is one of: text, parsed, dir, or num (for the text of the
-command, the fully parsed text, the directory it executed in, or the
-history number). Instead of executing a previous command, mpsh will
-simply echo the requested data about the previous command. For
-example:
+You can retrieve history information by adding a dot and field name to
+a history reference. This displays the field you requested, rather
+than repeating the command. The available fields are:
+
+   num - The history entry number.
+   text - The text of the command.
+   parsed - The fully parsed text.
+   dir - The directory it executed in.
+
+Instead of executing a previous command, mpsh will simply display the
+requested data about the previous command. For example:
 
 Go to the directory that you last used vi in:
 
@@ -446,18 +462,22 @@ Look at the detailed history entry for the last invocation of gcc:
 	mpsh$ history (!gcc.num)
 
 Subsitute "http" for "https" in the last "wget" command, and then
-execute it.
+execute it:
 
 	mpsh$ (!wget.text | sed s/https/http/)
 
-The history command displays command history entries. You can display
-the short form, long form, user-specified format, or full details for
-one entry:
+Check to see that your last command expanded the way you expected:
 
-	mpsh$ history
-	mpsh$ history -l
-	mpsh$ history format-string
+	mpsh$ !.parsed
+
+The history command displays previous commands. You can display the
+short form, long form, user-specified format, or full details for one
+entry. ("history" with no arguments is short for "history -s".)
+
 	mpsh$ history [n]
+	mpsh$ history -s [n]
+	mpsh$ history -l [n]
+	mpsh$ history format-string [n]
 
 The fields displayed by the history command are controlled by format
 strings, one letter for each field. The simple "history" display is
@@ -465,15 +485,8 @@ controlled by the mpsh-hist-disp environment variable (default: nc,
 for: number, command text), and the long format is controlled by the
 mpsh-hist-disp-l environment variable (default: nusxc, for: number,
 user cpu time, system cpu time, exit condition, command text). You can
-also specify a new format as the argument to history. For example, to
-display the commands executed in a particular directory (something
-including "local" in this example) invoke history with a format string
-of "dc" to display just directories and commands, and send the output
-to grep:
-
-	mpsh$ history dc | grep local
-
-The fields available via the format strings are:
+also specify a new format as the argument to history. The fields
+available via the format strings are:
 
    c - Command
    C - Command, limited to 20 characters
@@ -486,9 +499,20 @@ The fields available via the format strings are:
    d - Directory
    D - Directory, limited to 20 characters
 
-(CPU usage is currently only displayed in Solaris & BSD, because
-Linux's waitid() system call doesn't bother to fill in all the data in
-the struct it returns.)
+For example:
+
+To display the commands executed in a particular directory (something
+including "local" in this example), invoke history with a format
+string of "dc" to display just directories and commands, and send the
+output to grep:
+
+	mpsh$ history dc | grep local
+
+Display the commands that didn't exit ok:
+	mpsh$ history xnc | grep -v ^ok
+
+Add start time and exit status to the default history display:
+	mpsh$ setenv mpsh-hist-disp=ntxc
 
 The width of the fields displayed changes depending on the data, so
 don't try to filter the output of history based on strict character
@@ -503,9 +527,8 @@ yet exited. Stopped jobs and still running jobs will remain.)
 
 						   Directory History
 
-Directory history has similar syntax to command history, except a
-string match is from anywhere in a history entry, not the start of the
-line.
+Directory history lets you recall previous directory locations by name
+(partial match), number, or previous entry:
 
 	mpsh$ cd !str
 	mpsh$ cd ![n]
@@ -531,7 +554,164 @@ history, via command history fields:
 
 See command history section for details.
 
+								 Jobs
+
+The jobs facility lets you reference an existing job, access data
+about an existing job, or display a list of current jobs.
+
+You reference the process ID of a job with a percent sign, and either
+the job number, a string from the job command text, '%' for default
+job, or '-' for previous default job:
+
+	mpsh$ kill -9 %3
+	mpsh$ kill -9 %gcc
+	mpsh$ kill -9 %%
+	mpsh$ kill -9 %-
+
+You can get other information about a job by adding a dot and a field
+name to a job reference. The available fields are:
+
+   hist - History entry number.
+   text - The text of the command.
+   dir - The directory the command was executed in.
+
+For example:
+
+Go to the directory the current vi job was started in:
+
+	mpsh$ cd %vi.dir
+
+Show the full history details for the current make job:
+
+	mpsh$ history %make.hist
+
+The jobs command displays the current jobs. You can display the short
+form, long form, user-specified format, or full details for one entry.
+("jobs" with no arguments is short for "jobs -s".)
+
+	mpsh$ jobs [%job]
+	mpsh$ jobs -s [%job]
+	mpsh$ jobs -l [%job]
+	mpsh$ jobs format-string [%job]
+
+The fields displayed by the jobs command are controlled by format
+strings, one letter for each field. The simple "jobs -s" display is
+controlled by the mpsh-jobs-disp environment variable (default: nrcm,
+for: number, run status, command text, optional multi-process count),
+and the long format is controlled by the mpsh-jobs-disp-l environment
+variable (default: eRhfcm, for: elapsed time, long run status, history
+entry number, foreground order, command text, optional multi-process
+count). You can also specify an arbitrary format as the argument to
+jobs.
+
+The fields available via the format strings are:
+
+   c - Command
+   C - Command, limited to 20 characters
+   n - Number
+   h - History number
+   e - Elapsed time
+   t - Time started
+   r - Run status
+   R - Long run status
+   f - fg default
+   d - Directory
+   D - Directory, limited to 20 characters
+   m - smp count (optional)
+   M - smp count
+   p - pid
+
+For example:
+
+Show all current jobs, long format:
+
+	mpsh$ jobs -l
+
+Show current "make" job, long format:
+
+	mpsh$ jobs -l %make
+
+Show the elapsed time and command for current "make" job,
+
+	mpsh$ jobs ec %make
+
+Another way to change directory to where a job was started:
+
+	mpsh$ cd (jobs d %make)
+
+Make the jobs display approximate bash/ksh/etc behaviour:
+
+	mpsh$ setenv mpsh-jobs-disp=nfRc
+	mpsh$ setenv mpsh-jobs-disp-l=nfpRc
+
+The width of the fields displayed changes depending on the data, so
+don't try to filter the output of jobs based on strict character
+position.
+
+You can delete a job with the "-d" option. This simply makes mpsh
+forget about the job. The process will continue to run, but it will
+not appear in the jobs display, and you will not receive notification
+when it exits. (You can still find the status of a deleted job by
+looking up its history entry.)
+
+	mpsh$ jobs -d %job
+
+						 Command Substitution
+
+Command substitution is specified by parenthesis:
+
+	mpsh$ echo (date) (command | sort | etc (etc))
+
+This is about the only time mpsh isn't extremely demanding of
+whitespace.
+
+						   Command Grouping
+
+Command grouping is accomplished in mpsh with square brackets. The
+sequence between the brackets is executed in a sub-shell.
+
+	mpsh$ [ cd src ; tar cf - . ] | [ cd /backup/src ; tar xf - ]
+
+							IO Redirection
+
+The output from a command can be redirected to another command with a
+pipe symbol (|) or to a file with a greater-than symbol (>). There are
+options available in either case:
+
+   e - redirect stderr instead of stdout
+   b - redirect both (stdout & stderr)
+   a - append to existing file
+
+	mpsh$ command --help |e more
+	mpsh$ command >a data.out >e err.out
+
+Because of these options, whitespace is essential. The following will
+NOT be parsed as intended:
+
+	mpsh$ command >filename
+
+The whitespace before the filename is required:
+
+	mpsh$ command > filename
+
+							 Conditionals
+
+Conditionals are specified as an option after the command seperator:
+
+	mpsh$ true ;? echo true
+	mpsh$ false ;! echo false
+
+See also the Set Theory section, for set theory conditionals.
+
 					   List of Builtin Commands
+
+Builtin mpsh commands all display usage with "-h", and generally use
+the following options, as appropriate:
+
+   -s show (formatted for easy reading)
+   -q show quoted (formatted for use as a command)
+   -c clear all
+   -d delete one item
 
 All internal mpsh commands:
 
@@ -551,12 +731,9 @@ Change directory:
 	mpsh$ cd !n
 	mpsh$ cd !
 
-Show directory history:
+Show/clear/etc:
 
 	mpsh$ cd -s
-
-Clear directory history:
-
 	mpsh$ cd -c
 
 exit
@@ -574,9 +751,10 @@ history
 
 Show history:
 
-	mpsh$ history
-	mpsh$ history -l
-	mpsh$ history n
+	mpsh$ history [n]
+	mpsh$ history -s [n]
+	mpsh$ history -l [n]
+	mpsh$ history fmt [n]
 
 Clear history:
 
@@ -586,7 +764,14 @@ jobs
 
 Show jobs:
 
-	mpsh$ jobs
+	mpsh$ jobs [%job]
+	mpsh$ jobs -s [%job]
+	mpsh$ jobs -l [%job]
+	mpsh$ jobs fmt [%job]
+
+Delete one job:
+
+	mpsh$ jobs -d %job
 
 setenv
 
@@ -597,18 +782,34 @@ Set environment variable:
 Show environment variables:
 
 	mpsh$ setenv -s
+	mpsh$ setenv -q
 
 Show environment variable command aliases:
 
-	mpsh$ setenv -c
+	mpsh$ setenv -sa
+	mpsh$ setenv -qa
 
 Show mpsh internal settings:
 
-	mpsh$ setenv -i
+	mpsh$ setenv -si
+	mpsh$ setenv -qi
+
+Show mpsh job handlers:
+
+	mpsh$ setenv -sh
+	mpsh$ setenv -qh
 
 Delete environment variable:
 
-	mpsh$ setenv -d [name]
+	mpsh$ setenv -d name
+
+alias
+
+	mpsh$ alias
+	mpsh$ alias -s
+	mpsh$ alias -q
+	mpsh$ alias -d name
+	mpsh$ alias -c
 
 wait
 
@@ -645,8 +846,8 @@ Will expand to the first match in the directories listed in $PATH.
 
 Startup files are:
 
-   $HOME/.mpshrc_all - read by all mpsh instances
-   $HOME/.mpshrc_login - read by mpsh logins
+$HOME/.mpshrc_all - read by all mpsh instances
+$HOME/.mpshrc_login - read by mpsh logins
 
 					   Differences From sh/bash
 
@@ -706,7 +907,7 @@ setenv handler-p="!rsh pi0 cd (pwd) ';' `cat`"
 # Evaluate the "command" as a dc calculation:
 setenv handler-d="!dc"
 # Send the "command" to the X Windows buffer:
-setenv handler-b="!rsh desktop xcb -s 0 -display $DISPLAY"
+setenv handler-b="!xcb -s 0"
 
 # alias env variables:
 # This gives behaviour similar to bash's "!$" with "$!".
@@ -716,8 +917,6 @@ setenv handler-b="!rsh desktop xcb -s 0 -display $DISPLAY"
 setenv !="!!.parsed | sed 's/.* //'"
 
 # $x reads the X Windows buffer.
-# Uncomment and tweak first version for remote use.
-#setenv x="!rsh desktop xcb -p 0 -display $DISPLAY"
 setenv x="!xcb -p 0"
 
 setenv YY="!date +%Y-%m-%d"
@@ -725,20 +924,30 @@ setenv CWD="!pwd"
 
 
 # Internal mpsh settings:
+
 # Show history & cd history substitutions
 setenv mpsh-history=1
 setenv mpsh-cdhistory=1
+
 # Max error reporting
 setenv mpsh-error-level=3
+
 # Adjust history display formats as desired:
 setenv mpsh-hist-disp=nc
 setenv mpsh-hist-disp-l=ndxuec
+
+# Uncomment for bash style jobs display:
+#setenv mpsh-jobs-disp=nfRc
+#setenv mpsh-jobs-disp-l=nfpRc
+
 
 # prompt
 setenv mpsh-prompt="!echo (date '+%M') "(hostname)" 'mpsh% '"
 
 # aliases
 alias F="fg %-"
+alias M="! | more"
+alias "?=!.parsed"
 
 
 						  Login Startup File

@@ -18,7 +18,7 @@ setenv handler-p="!rsh pi0 cd (pwd) ';' `cat`"
 # Evaluate the "command" as a dc calculation:
 setenv handler-d="!dc"
 # Send the "command" to the X Windows buffer:
-setenv handler-b="!rsh desktop xcb -s 0 -display $DISPLAY"
+setenv handler-b="!xcb -s 0"
 
 # alias env variables:
 # This gives behaviour similar to bash's "!$" with "$!".
@@ -29,7 +29,6 @@ setenv !="!!.parsed | sed 's/.* //'"
 
 # $x reads the X Windows buffer.
 # Uncomment and tweak first version for remote use.
-#setenv x="!rsh desktop xcb -p 0 -display $DISPLAY"
 setenv x="!xcb -p 0"
 
 setenv YY="!date +%Y-%m-%d"
@@ -37,14 +36,22 @@ setenv CWD="!pwd"
 
 
 # Internal mpsh settings:
+
 # Show history & cd history substitutions
 setenv mpsh-history=1
 setenv mpsh-cdhistory=1
+
 # Max error reporting
 setenv mpsh-error-level=3
+
 # Adjust history display formats as desired:
 setenv mpsh-hist-disp=nc
 setenv mpsh-hist-disp-l=ndxuec
+
+# Uncomment for bash style jobs display:
+#setenv mpsh-jobs-disp=nfRc
+#setenv mpsh-jobs-disp-l=nfpRc
+
 
 # prompt
 setenv mpsh-prompt="!echo (date '+%M') "(hostname)" 'mpsh% '"
@@ -52,5 +59,7 @@ setenv mpsh-prompt="!echo (date '+%M') "(hostname)" 'mpsh% '"
 
 # aliases
 alias F="fg %-"
+alias M="! | more"
+alias "?=!.parsed"
 
 

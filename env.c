@@ -91,6 +91,8 @@ struct internal_variables int_vars[] = {
 	"mpsh-nice=",			"10",			update_nice,
 	"mpsh-hist-disp=",		"nc",			update_null,
 	"mpsh-hist-disp-l=",	"nusxc",		update_null,
+	"mpsh-jobs-disp=",		"nrcm",			update_null,
+	"mpsh-jobs-disp-l=",	"eRhfcm",		update_null,
 	"mpsh-eof-exit=",		"1",			update_null,
 	NULL, NULL, NULL
 } ;
@@ -312,7 +314,7 @@ char *str;
 	for(sl=0; str[sl] && str[sl] != '='; sl++) ;
 	if(str[sl] == '=') sl++;
 	else {
-		report_error("setenv syntax error",str,0,0);
+		report_error("Syntax error",str,0,0);
 		return;
 	}
 
@@ -377,7 +379,6 @@ struct command *curr;
 	char *val;
 	char *pt;
 	int i, len;
-	char *new;
 	int pre;
 	char *orig;
 	char *tmp;
@@ -435,27 +436,60 @@ char *e;
 	return(1);
 }
 
-show_env_public() {
+display_env(env_type,quoted)
+int env_type;
+int quoted;
+{
 	struct word_list *w;
-    for(w=global_env->next; w; w=w->next) 
-		if(public_env(w->word))
-			puts(w->word);
-}
+	char *pt;
+	char buff[64];
+	int display;
+	int i;
+	int width;
 
-show_env_private() {
-	struct word_list *w;
-    for(w=global_env->next; w; w=w->next) 
-		if(!public_env(w->word) && strncmp(w->word,"mpsh-",5) != 0)
-			puts(w->word);
-}
+	if(!quoted) {
+		width = 0;
+		for(w=global_env->next; w; w=w->next) {
+			pt = w->word;
+			display = 0;
 
-show_env_mpsh() {
-	struct word_list *w;
-    for(w=global_env->next; w; w=w->next) 
-		if(!public_env(w->word) && strncmp(w->word,"mpsh-",5) == 0)
-			puts(w->word);
-}
+			if(env_type == ENV_PUBLIC && public_env(pt)) display=1;
+			if(env_type == ENV_ALIAS && alias_env(pt)) display=1;
+			if(env_type == ENV_INTERNAL && strncmp(pt,"mpsh-",5) == 0) 
+				display=1;
+			if(env_type == ENV_HANDLER && strncmp(pt,"handler-",8) == 0) 
+				display=1;
 
+			if(display) {
+				for(i=0; pt[i]; i++)
+					if(pt[i] == '=') break;
+				if(i > width) width = i;
+			}
+		}
+	}
+
+	for(w=global_env->next; w; w=w->next) {
+		pt = w->word;
+		display = 0;
+
+		if(env_type == ENV_PUBLIC && public_env(pt)) display=1;
+		if(env_type == ENV_ALIAS && alias_env(pt)) display=1;
+		if(env_type == ENV_INTERNAL && strncmp(pt,"mpsh-",5) == 0) display=1;
+		if(env_type == ENV_HANDLER && strncmp(pt,"handler-",8) == 0) 
+				display=1;
+
+		if(display) {
+			for(i=0; pt[i]; i++)
+				if(pt[i] == '=') break;
+			strncpy(buff,pt,i);
+			buff[i] = '\0';
+			if(quoted)
+				printf("%s=\"%s\"\n",buff,pt+i+1);
+			else
+				printf("%-*s = %s\n",width,buff,pt+i+1);
+		}
+	}
+}
 
 check_command_glob(w)
 struct word_list *w;
@@ -541,7 +575,7 @@ char *src;
 		}
 		last = w;
 	}
-	report_error("variable not found",src,0,0);
+	report_error("Variable not found",src,0,0);
 	free(str);
 }
 
@@ -574,8 +608,10 @@ char *str, *str2;
 	flags = curr->flags;
 	pipe_flags = curr->pipe_io_flags;
 
-	curr = insert_parse_string(curr,str);
-	if(!curr) return(0);
+	if(str) {
+		curr = insert_parse_string(curr,str);
+		if(!curr) return(0);
+	}
 
 	last = find_last_word(&curr->words);
 	append_string_to_word(last,append);
@@ -595,4 +631,28 @@ char *str, *str2;
 
 	return(1);
 }
+
+/* Is this env a command alias? */
+alias_env(e)
+char *e;
+{
+	char *pt;
+
+	/* variable alias: */
+	pt = index(e,'=');
+	if(pt[1] != '!') {
+		return(0);
+	}
+
+	/* Internal settings */
+	if(strncmp(e,"mpsh-",5) == 0)
+		return(0);
+
+	/* Job Handler */
+	if(strncmp(e,"handler-",8) == 0)
+		return(0);
+
+	return(1);
+}
+
 

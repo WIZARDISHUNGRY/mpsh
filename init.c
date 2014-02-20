@@ -77,7 +77,6 @@ char *env[];
 	char buff[256];
 	char *home;
 	int ret;
-	int i;
 
 
 	control_term = open("/dev/tty",O_RDONLY,0x00);
@@ -122,7 +121,7 @@ char *env[];
 	}
 
 	if(strcmp(argv[1],"-c") == 0) {
-		parse_and_run(argv[2],INTERACTIVE,NORMAL_JOB);
+		parse_and_run(argv[2],INTERACTIVE);
 		exit(0);
 	}
 

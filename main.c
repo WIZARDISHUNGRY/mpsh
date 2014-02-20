@@ -109,17 +109,16 @@ char *env[];
 	for(;;) {
 		parse_depth = 0;
 		if(line = readline(pr=get_prompt())) {
-			parse_and_run(line,INTERACTIVE,NORMAL_JOB);
+			parse_and_run(line,INTERACTIVE);
 		} else {
 			/* EOF */
 			if(number_of_jobs() > 0 ) {
 				puts("");
-				show_jobs();
+				show_jobs(NULL,-1);
 			} else {
+				puts("");
 				if(strcmp(get_env("mpsh-eof-exit"),"1") == 0) 
 					exit(0);
-				else
-					puts("");
 			}
 		}
 		free(pr);
@@ -132,17 +131,16 @@ char *env[];
 		printf("%s",pr);
 		free(pr);
 		if(gets(line)) {
-			parse_and_run(line,INTERACTIVE,NORMAL_JOB);
+			parse_and_run(line,INTERACTIVE);
 		} else {
 			/* EOF */
 			if(number_of_jobs() > 0 ) {
 				puts("");
-				show_jobs();
+				show_jobs(NULL,-1);
 			} else {
+				puts("");
 				if(strcmp(get_env("mpsh-eof-exit"),"1") == 0) 
 					exit(0);
-				else
-					puts("");
 			}
 		}
 	}
@@ -150,16 +148,13 @@ char *env[];
 
 }
 
-parse_and_run(text_command,interactive,job_type)
+parse_and_run(text_command,interactive)
 char *text_command;
 int interactive;
-int job_type;
 {
 	char *pt;
 	struct command *command;
 	struct command *initial_command;
-	struct command *c;
-	int ret;
 
 	if(parse_depth++ > MAX_PARSE_DEPTH) {
 		report_error("Excessive parse depth",NULL,0,0);
@@ -205,15 +200,11 @@ int job_type;
 		display_command(initial_command);
 		*/
 
-		if(command->display_text && interactive)
+		if((command->flags & FLAG_DISPLAY_TEXT) && interactive)
 			puts(initial_command->text);
 
 		/* Save this info for history, before exec command */
 		command->dir = dup_cwd();
-
-		if(job_type == GROUP_JOB)
-			for(c = initial_command; c; c=c->pipeline)
-				c->flags |= FLAG_NOTERM;
 
 		/* EXECUTE COMMAND */
 		exec_command(initial_command);
