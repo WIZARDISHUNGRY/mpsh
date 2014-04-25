@@ -79,7 +79,17 @@ init_error_level() {
 update_error_level(str)
 char *str;
 {
-	error_level = atoi(str);
+	int v;
+
+	v = atoi(str);
+
+	if(!isdigit(str[0]) || v < 0 || v > 3) {
+		report_error("Setting requires value 0 to 3",str,0,0);
+		return(0);
+	}
+
+	error_level = v;
+	return(1);
 }
 
 report_error(msg,str,ch,err)

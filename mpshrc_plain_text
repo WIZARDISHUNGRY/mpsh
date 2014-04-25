@@ -1,0 +1,27 @@
+# plain-text
+#
+# set macros for plain-text environment in mpsh
+#
+# Intended for limited keyboards, where symbols are missing
+# or difficult to access
+
+
+
+macro propen=\(
+macro prclose=\)
+
+macro pipe=|
+
+macro output=>
+macro stderr=>e
+macro append=>a
+
+macro star="*"
+macro qu="?"
+
+macro "bang "=!
+
+macro "job "="%"
+
+macro amp=&
+

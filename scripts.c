@@ -65,7 +65,6 @@ scripts.c:
 #include "mpsh.h"
 
 
-#define BUFF_SIZE 512
 
 
 run_script(name,quiet)
@@ -122,13 +121,13 @@ int quiet;
 		if(i+1 < argc)
 			strcat(total_args," ");
 		sprintf(buff,"%d=%s",i-1,argv[i]);
-		set_env_str(buff);
+		set_env(buff);
 	}
 
-	set_env_str(total_args);
+	set_env(total_args);
 	free(total_args);
 	sprintf(buff,"#=%d",argc-2);
-	set_env_str(buff);
+	set_env(buff);
 
 	ret = run_script(argv[1],quiet);
 

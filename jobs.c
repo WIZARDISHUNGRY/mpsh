@@ -52,6 +52,8 @@ jobs.c:
 #include <errno.h>
 #include <signal.h>
 #include <unistd.h>
+#include <fcntl.h>
+
 
 #ifdef Solaris
 #include <wait.h>
@@ -88,6 +90,7 @@ extern struct history_entry **history;
 struct job {
 	int display;
 	char *text;
+	char *name;
 	pid_t pid;
 	pid_t *pids;
 	int history;
@@ -103,6 +106,9 @@ struct job jobs[JOB_ENTRIES];
 
 int current_job_pid;
 int default_bg_job;
+
+
+int control_term;
 
 
 
@@ -139,6 +145,7 @@ struct command *command;
 
 	jobs[j].display = 1;
 	jobs[j].text = strdup(command->text);
+	jobs[j].name = NULL;
 	jobs[j].pid = command->pid;
 	jobs[j].history = add_history_entry(command);
 	jobs[j].running = 1;
@@ -229,10 +236,17 @@ int j;
 		free(jobs[j].pids);
 		jobs[j].pids = NULL;
 	}
+
 	if(jobs[j].text) {
 		free(jobs[j].text);
 		jobs[j].text = NULL;
 	}
+
+	if(jobs[j].name) {
+		free(jobs[j].name);
+		jobs[j].name = NULL;
+	}
+
 	return;
 }
 
@@ -263,7 +277,8 @@ int job;
 	signal(SIGTTIN,SIG_IGN);
 	signal(SIGTTOU,SIG_IGN);
 	if(isatty(fileno(stdout)))
-		tcsetpgrp(control_term,getpgrp());
+		set_terminal(0);
+
 
 	current_job_pid = -1;
 
@@ -273,8 +288,8 @@ int job;
 	} 
 
 	if(WIFSTOPPED(st)) {
-		puts("Stopped");
-		printf("Job: %s\n",jobs[job].text);
+		printf("Job %s stopped\n",
+			jobs[job].name ? jobs[job].name : jobs[job].text);
 		jobs[job].running = 0;
 		change_history_status(jobs[job].history,"Stopped");
 		default_bg_job = job;
@@ -310,7 +325,9 @@ check_for_job_exit() { /* BSD VERSION */
 							jobs[job].pids[k] = jobs[job].pids[k+1];
 						if(jobs[job].pids[0] == 0) {
 							if(jobs[job].display)
-								fprintf(stderr,"Job %s %s.\n",jobs[job].text,
+								fprintf(stderr,"Job %s %s.\n",
+								jobs[job].name ? jobs[job].name :
+								jobs[job].text,
 								WIFSIGNALED(st) ?
 								"killed" : "exited");
 							add_history_details(jobs[job].history,st,&ruse);
@@ -323,7 +340,8 @@ check_for_job_exit() { /* BSD VERSION */
 			} else if(jobs[job].pid == pid) {
 				if(!WIFSTOPPED(st)) {
 					if(jobs[job].display)
-						fprintf(stderr,"Job %s %s.\n",jobs[job].text,
+						fprintf(stderr,"Job %s %s.\n",
+							jobs[job].name ? jobs[job].name : jobs[job].text,
 							WIFSIGNALED(st) ? "killed" : "exited");
 					add_history_details(jobs[job].history,st,&ruse);
 					delete_job(job);
@@ -332,28 +350,6 @@ check_for_job_exit() { /* BSD VERSION */
 			}
 		}
 		end: ;
-	}
-}
-
-check_for_job_wake(dp) /* BSD VERSION */
-int dp;
-{ 
-	int pid;
-	int job;
-	struct rusage ruse;
-	int st;
-
-	while((pid = wait4(dp,&st,WCONTINUED,&ruse)) != 0) {
-		if(pid != 0) {
-			for(job=0; job<JOB_ENTRIES; job++) {
-				if(jobs[job].pid == pid) {
-					jobs[job].running = 1;
-					change_history_status(jobs[job].history,"Running");
-					wait_job(job);
-					return;
-				}
-			}
-		} else return;
 	}
 }
 
@@ -381,7 +377,7 @@ int job;
 	signal(SIGTTIN,SIG_IGN);
 	signal(SIGTTOU,SIG_IGN);
 	if(isatty(fileno(stdout)))
-		tcsetpgrp(control_term,getpgrp());
+		set_terminal(0);
 
 	current_job_pid = -1;
 
@@ -391,8 +387,11 @@ int job;
 	}
 
 	if(infop.si_code == CLD_STOPPED) {
+		/*
 		puts("Stopped");
-		printf("Job: %s\n",jobs[job].text);
+		*/
+		printf("Job %s stopped\n",
+			jobs[job].name ? jobs[job].name : jobs[job].text);
 		jobs[job].running = 0;
 		change_history_status(jobs[job].history,"Stopped");
 		default_bg_job = job;
@@ -414,7 +413,6 @@ check_for_job_exit() { /* NON-BSD VERSION */
 	int job;
 	int i, k;
 
-
 	infop.si_utime = 0L;
 	infop.si_stime = 0L;
 
@@ -431,7 +429,9 @@ check_for_job_exit() { /* NON-BSD VERSION */
 							jobs[job].pids[k] = jobs[job].pids[k+1];
 						if(jobs[job].pids[0] == 0) {
 							if(jobs[job].display)
-								fprintf(stderr,"Job %s %s.\n",jobs[job].text,
+								fprintf(stderr,"Job %s %s.\n",
+									jobs[job].name ? 
+									jobs[job].name : jobs[job].text,
 									infop.si_code == CLD_KILLED ||
 									infop.si_code == CLD_DUMPED ?
 									"killed" : "exited");
@@ -444,7 +444,8 @@ check_for_job_exit() { /* NON-BSD VERSION */
 				}
 			} else if(jobs[job].pid == pid) {
 				if(jobs[job].display)
-					fprintf(stderr,"Job %s %s.\n",jobs[job].text,
+					fprintf(stderr,"Job %s %s.\n",
+						jobs[job].name ? jobs[job].name : jobs[job].text,
 						infop.si_code == CLD_KILLED ||
 						infop.si_code == CLD_DUMPED ? "killed" : "exited");
 				add_history_details(jobs[job].history,&infop);
@@ -456,13 +457,25 @@ check_for_job_exit() { /* NON-BSD VERSION */
 	}
 }
 
-check_for_job_wake(dp) /* NON-BSD VERSION */
+#endif
+
+check_for_job_wake(dp)
 int dp;
 {
 	int pid;
-	siginfo_t infop;
 	int job;
 
+	pid = dp;
+	for(job=0; job<JOB_ENTRIES; job++) {
+		if(jobs[job].pid == pid) {
+			jobs[job].running = 1;
+			change_history_status(jobs[job].history,"Running");
+			wait_job(job);
+			return;
+		}
+	}
+
+#ifdef TESTING
 	while(waitid(P_PID,dp,&infop,WCONTINUED) == 0) {
 		pid = infop.si_pid;
 		if(pid == dp) {
@@ -476,9 +489,8 @@ int dp;
 			}
 		} else return;
 	}
-}
-
 #endif
+}
 
 fg_job(arg)
 char *arg;
@@ -489,13 +501,20 @@ char *arg;
 		pid = (pid_t) atoi(arg);
 	} else {
 		if(default_bg_job == -1) find_bg_job();
-		if(jobs[default_bg_job].pid == 0) find_bg_job();
+		if(default_bg_job == -1) {
+			report_error("No default job",arg,0,0);
+			return(0);
+		}
+		if(jobs[default_bg_job].pid == 0) {
+			report_error("No default job",arg,0,0);
+			return(0);
+		}
 		pid = jobs[default_bg_job].pid;
 	}
 
 	if(pid > 0) {
 		signal(SIGTTOU,SIG_IGN);
-		tcsetpgrp(control_term,getpgid(pid));
+		set_terminal(pid);
 		kill(pid * -1,SIGCONT);
 		check_for_job_wake(pid);
 	} else {
@@ -553,6 +572,10 @@ struct command *curr;
 								buff = history[jobs[job].history]->dir;
 							if(strcmp(arg,"text") == 0)
 								buff = jobs[job].text;
+							if(strcmp(arg,"name") == 0) {
+								buff = jobs[job].name;
+								if(!buff) buff = "";
+							}
 						} else
 							sprintf(buff,"%d",jobs[job].pid);
 						string_to_word(buff,&w);
@@ -574,16 +597,24 @@ char *str;
 	char *cmp;
 	int i;
 	int job;
+	struct job *jp;
 
 	len = strlen(str);
+
+	/* Check for name match, or strict command match first */
 	for(job=0; job<JOB_ENTRIES; job++) {
-		if(jobs[job].pid && jobs[job].display &&
-		strncmp(str,jobs[job].text,len) == 0) return(job);
+		jp = &jobs[job];
+		if(jp->pid && jp->display) {
+			if(jp->name && strncmp(str,jp->name,len) == 0) return(job);
+			if(strncmp(str,jp->text,len) == 0) return(job);
+		}
 	}
 
+	/* Now search for looser command substring match */
 	for(job=0; job<JOB_ENTRIES; job++) {
-		if(jobs[job].pid != 0 && jobs[job].display) {
-			cmp = jobs[job].text;
+		jp = &jobs[job];
+		if(jp->pid != 0 && jp->display) {
+			cmp = jp->text;
 			len2 = strlen(cmp)-1;
 			for(i=1; i<len2; i++)
 				if(strncmp(str,cmp+i,len) == 0) return(job);
@@ -771,6 +802,9 @@ int j;
 		puts("");
 	} else printf("Process ID:    %d\n",jp->pid);
 
+	if(jp->name)
+		printf("Name:          %s\n",jp->name);
+
 	printf("Command:       %s\n",jp->text);
 	printf("Directory:     %s\n",hp->dir);
 	printf("Status:        %s\n",jobs[j].running ? "Running":"Stopped");
@@ -830,6 +864,7 @@ int job;
 		h - history number
 		c - command
 		C - command 20 char
+		a - name
 		e - elapsed
 		t - start time
 		d - directory
@@ -863,6 +898,10 @@ int job;
 					case 'c':
 					case 'C':
 						pt = jp->text;
+						break;
+					case 'a':
+						pt = jp->name;
+						if(!pt) pt = "";
 						break;
 					case 'r':
 						/* status */
@@ -981,6 +1020,7 @@ char *pt;
 			break;
 		/* Left justified: */
 		case 'd':
+		case 'a':
 			sprintf(output,"%-*s",w,pt);
 			break;
 		/* Right justified */
@@ -1044,4 +1084,27 @@ char *arg;
 	}
 	return(-1);
 }
+
+name_job(job,name)
+int job;
+char *name;
+{
+	if(jobs[job].name) free(jobs[job].name);
+	jobs[job].name = strdup(name);
+}
+
+
+set_terminal(pid)
+int pid;
+{
+	tcsetpgrp(control_term,getpgid(pid));
+}
+
+init_terminal() {
+	control_term = open("/dev/tty",O_RDONLY,0x00);
+
+	if(control_term == -1)
+		report_error("Error opening device","/dev/tty",0,1);
+}
+
 

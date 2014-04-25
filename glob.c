@@ -76,7 +76,6 @@ struct command *initial_command;
 
 	while(command) {
 		w = command->words;
-		check_command_glob(command->words);
 		w = w->next;
 		while(w) {
 			if(
@@ -84,7 +83,7 @@ struct command *initial_command;
 				index(w->word,'*') != 0 ||
 				index(w->word,'[') != 0
 			) {
-				if(glob(w->word,GLOB_NOCHECK,NULL,&gl) == 0) {
+				if(glob(w->word,0,NULL,&gl) == 0) {
 					/* Copy glob expansion from glob_t struct into wordlist */
 					next_orig_word = w->next;
 					i=0;

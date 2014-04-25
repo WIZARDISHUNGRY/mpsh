@@ -36,60 +36,34 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 mpsh by Dave Fischer http://www.cca.org
 
-prompt.c:
+env.h:
 
-
+	structs & definitions related to environment variables
 
 */
 
+#define ENV_FLAG_TYPE 		0x00FF
+#define ENV_FLAG_INHERIT	0x0001
+#define ENV_FLAG_ALIAS		0x0002
+#define ENV_FLAG_SETTING	0x0004
+#define ENV_FLAG_HANDLER	0x0008
 
+#define ENV_FLAG_READONLY	0x0100
+#define ENV_FLAG_NODELETE	0x0200
+#define ENV_FLAG_EXEC		0x0400
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <strings.h>
+#define ENV_NOT_INHERITED 0xFFFE
 
-#ifdef LINUX
-#endif
+struct env_list {
+	char *var;
+	struct env_list *next;
+	int flags;
+	int len;
+} ;
 
-#ifdef BSD
-#endif
-
-#include "mpsh.h"
-
-char *prompt_string;
-#define DEFAULT_PROMPT "mpsh$ "
-
-init_prompt() {
-	prompt_string = NULL;
-	update_prompt_string(get_env("mpsh-prompt"));
-	if(!prompt_string) prompt_string = strdup(DEFAULT_PROMPT);
-}
-
-display_prompt() {
-	fputs(prompt_string,stdout);
-	fflush(stdout);
-}
-
-char *get_prompt() {
-	char *tmp;
-
-	if(prompt_string[0] == '!') {
-		tmp = read_from_command(prompt_string+1);
-		return(tmp);
-	}
-
-	return(strdup(prompt_string));
-}
-
-update_prompt_string(str)
-char *str;
-{
-	if(str) {
-		if(prompt_string) free(prompt_string);
-		prompt_string = strdup(str);
-	}
-	return(1);
-}
+char *read_env_var();
+struct env_list *find_env_var();
+struct env_list *alloc_env_var();
+struct env_list *new_set_env();
 
 

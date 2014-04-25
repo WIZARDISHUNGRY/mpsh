@@ -1,5 +1,4 @@
-
-Introduction to mpsh (Version 1.4, 2014-02-20)
+Introduction to mpsh (Version 1.5, 2014-04-25)
 
 mpsh is an experimental command interpreter for Unix systems written
 by Dave Fischer at the Center for Computational Aesthetics and
@@ -10,10 +9,10 @@ features is the ability to split certain jobs into multiple processes.
 
 The major interesting features are:
 
-Job Handlers
-Multiprocess Jobs
-Environment Variable Command Aliases
-Set Theory Operators
+   Job Handlers
+   Multiprocess Jobs
+   Environment Variable Command Aliases
+   Set Theory Operators
 
 mpsh command history and job control features provide access to much
 more than just command repetition and process ID. See the command
@@ -155,10 +154,8 @@ batch queues, execution on remote nodes, delayed execution via
 handlers are user configured. The handler is specified by a single
 letter, which is then the argument after "&". It is configured by
 setting an environment variable handler-x where x is the letter for
-the handler you want to configure. (Since this is an environment
-variable command alias, the value must start with an exclamation
-point. See Environment Variable Command Aliases section for more
-details.) The handler can be given arguments as well. Some examples:
+the handler you want to configure. The handler can be given arguments
+as well. Some examples:
 
 Configure job handler "q" to submit job to a batch queue, via the
 command "batch-submit". When a command is run with the "&q" option,
@@ -166,24 +163,27 @@ batch-submit will be executed, with the text of that command as stdin.
 batch-submit can also be given arguments, for example "40" (presumably
 a batch queue priority level) in this example:
 
-	mpsh$ setenv handler-q="!batch-submit"
+	mpsh$ setenv handler-q="batch-submit"
 	mpsh$ command blah blah &q 40
 
 Submit a job to "at" to run at a later time:
 
-	mpsh$ setenv handler-t="!at"
+	mpsh$ setenv handler-t="at"
 	mpsh$ command blah blah &t 6:00 pm
 
-(See more examples in mpshrc_all)
-
-Handing the command off to the job handler is not done in the
-background (unless the job handler has a '&' at the end of the line),
-and once it's accomplished, it is not listed as a running job.
+(See more examples in Handing the command off to the job handler is
+not done in the background (unless the job handler has a '&' at the
+end of the line), and once it's accomplished, it is not listed as a
+running job.
 
 Configured job handlers can be displayed with setenv:
 
 	mpsh$ setenv -sh
 	mpsh$ setenv -qh
+
+And cleared:
+
+	mpsh$ setenv -ch
 
 						   Multiprocess Jobs
 
@@ -249,17 +249,17 @@ so duplicates and original order are not maintained.)
 You can treat the text output of any command as a set, or enter sets
 directly using curly braces (but with spaces instead of commas):
 
-	mpsh$ { red green blue } |^ { fast red { dog cat gorilla } }
+	mpsh$ { red green } |U { blue orange }
 
 	mpsh$ ls |- { *.o }
 
 The basic set theory operations are:
 
    Union:                  |U 
-   Intersection:           |^
-   Difference:             |\
-   Synonym for difference: |-
-   Symmetric difference:   |o
+   Intersection:           |^ 
+   Difference:             |\ 
+   Synonym for difference: |- 
+   Symmetric difference:   |o 
 
 You can also execute commands conditionally based on set theory tests.
 
@@ -310,6 +310,10 @@ And deleted with the -d option:
 
 	mpsh$ setenv -d name
 
+Clear all with the -c option:
+
+	mpsh$ setenv -c
+
 				 Environment Variable Command Aliases
 
 An environment variable can be set to a command alias by starting it
@@ -340,18 +344,25 @@ Display the date in the prompt string:
 
 	mpsh$ setenv mpsh-prompt="!echo (date '+%l:%M') 'mpsh% '"
 
+Whether or not the expanded text includes newlines is controlled by
+the mpsh internal setting mpsh-exp-nl. It defaults to false: no
+newlines.
+
 Command alias variables can be displayed with the -sa or -qa option:
 
 	mpsh$ setenv -sa
 	mpsh$ setenv -qa
 
 Environment variable command aliases are deleted with the -d option,
-just like normal environment variables.
+and cleared with the -ca option:
+
+	mpsh$ setenv -d name
+	mpsh$ setenv -ca
 
 				Environment Variable Internal Settings
 
 Environment variables are also used to control internal mpsh settings.
-True/False settings are set to 1 or 0.
+True/False settings can be "true", "false", or 1 or 0.
 
 The internal settings are:
 
@@ -366,6 +377,7 @@ The internal settings are:
    mpsh-umask - umask, in octal
    mpsh-eof-exit - Exit on EOF?
    mpsh-nice - nice value for "&-[-]"
+   mpsh-exp-nl - allow newlines in env alias expansion
    mpsh-error-level - error verbosity level 0 - 3
 
 For the four verbosity levels, error messages are formatted:
@@ -394,6 +406,10 @@ Show mpsh internal settings:
 	mpsh$ setenv -si
 	mpsh$ setenv -qi
 
+Reset mpsh internal settings to defaults:
+
+	mpsh$ setenv -ci
+
 								Aliases
 
 An alias is shorthand for a command. Unlike shell scripts, an alias
@@ -418,13 +434,37 @@ Delete one alias, or clear all aliases:
 Any arguments to an alias will be appended to the expanded command.
 However, if you want to do something more complex with arguments, you
 can use an alias to invoke a normal or "dot" script, which will get
-the command's alias via environment variables:
+the command's arguments via environment variables:
 
 	mpsh$ alias cdnew=". $HOME/mpsh/cdnew"
 	mpsh$ cat $HOME/mpsh/cdnew
 	mkdir $1
 	cd $1
 	mpsh$ cdnew zardoz
+
+								Macros
+
+Macros are simple text substitutions that are expanded before any
+other parsing, so they can be used to rename any mpsh feature,
+including things like pipes, file redirection, etc. You could redefine
+all symbols for use from a device with a limited keyboard (ie: cell
+phone) for example.
+
+Create macro:
+
+	mpsh$ macro name="text"
+
+Show existing macros, formatted for readability, or quoted:
+
+	mpsh$ macro -s
+	mpsh$ macro -q
+
+Macros are referred to by number instead of by name, because the name
+will be expanded by the macro. Macro numbers are included in the macro
+-s display. Delete one macro, or clear all macros:
+
+	mpsh$ macro -d num
+	mpsh$ macro -c
 
 							Command History
 
@@ -596,18 +636,19 @@ form, long form, user-specified format, or full details for one entry.
 
 The fields displayed by the jobs command are controlled by format
 strings, one letter for each field. The simple "jobs -s" display is
-controlled by the mpsh-jobs-disp environment variable (default: nrcm,
-for: number, run status, command text, optional multi-process count),
-and the long format is controlled by the mpsh-jobs-disp-l environment
-variable (default: eRhfcm, for: elapsed time, long run status, history
-entry number, foreground order, command text, optional multi-process
-count). You can also specify an arbitrary format as the argument to
-jobs.
+controlled by the mpsh-jobs-disp environment variable (default: anrcm,
+for: name, number, run status, command text, optional multi-process
+count), and the long format is controlled by the mpsh-jobs-disp-l
+environment variable (default: aeRhfcm, for: name, elapsed time, long
+run status, history entry number, foreground order, command text,
+optional multi-process count). You can also specify an arbitrary
+format as the argument to jobs.
 
 The fields available via the format strings are:
 
    c - Command
    C - Command, limited to 20 characters
+   a - Name
    n - Number
    h - History number
    e - Elapsed time
@@ -655,6 +696,12 @@ when it exits. (You can still find the status of a deleted job by
 looking up its history entry.)
 
 	mpsh$ jobs -d %job
+
+You can also name a job. The job name can then be used for job
+expansion: %Name, job exit notification, and can be displayed in jobs
+or jobs -l with the "a" format field.
+
+	mpsh$ jobs -n %job name
 
 						 Command Substitution
 
@@ -721,6 +768,14 @@ Execute script in the current shell:
 
 	mpsh$ . file
 
+alias
+
+	mpsh$ alias
+	mpsh$ alias -s
+	mpsh$ alias -q
+	mpsh$ alias -d name
+	mpsh$ alias -c
+
 cd
 
 Change directory:
@@ -731,7 +786,7 @@ Change directory:
 	mpsh$ cd !n
 	mpsh$ cd !
 
-Show/clear/etc:
+Show or clear directory history:
 
 	mpsh$ cd -s
 	mpsh$ cd -c
@@ -773,6 +828,14 @@ Delete one job:
 
 	mpsh$ jobs -d %job
 
+macro
+
+	mpsh$ macro
+	mpsh$ macro -s
+	mpsh$ macro -q
+	mpsh$ macro -d num
+	mpsh$ macro -c
+
 setenv
 
 Set environment variable:
@@ -799,17 +862,22 @@ Show mpsh job handlers:
 	mpsh$ setenv -sh
 	mpsh$ setenv -qh
 
-Delete environment variable:
+Delete environment variable (any type):
 
 	mpsh$ setenv -d name
 
-alias
+Clear environment variables, command alias variables, job handlers, or
+reset internal settings to defaults:
 
-	mpsh$ alias
-	mpsh$ alias -s
-	mpsh$ alias -q
-	mpsh$ alias -d name
-	mpsh$ alias -c
+	mpsh$ setenv -c
+	mpsh$ setenv -ca
+	mpsh$ setenv -ch
+	mpsh$ setenv -ci
+
+show-path
+
+	mpsh$ show-path
+	mpsh$ show-path command
 
 wait
 
@@ -846,8 +914,8 @@ Will expand to the first match in the directories listed in $PATH.
 
 Startup files are:
 
-$HOME/.mpshrc_all - read by all mpsh instances
-$HOME/.mpshrc_login - read by mpsh logins
+   $HOME/.mpshrc_all - read by all mpsh instances
+   $HOME/.mpshrc_login - read by mpsh logins
 
 					   Differences From sh/bash
 
@@ -877,8 +945,6 @@ Quoting is weird, see quoting section.
 mpsh automatically collects status data on job exit, which is
 accessable via "history -l" or "history [n]". CPU time, etc.
 
-Doesn't currently convert ~ to $HOME.
-
 Doesn't do stdin redirects yet.
 
 "pwd" and "cd" follow the real path, not the path following symbolic
@@ -887,27 +953,27 @@ to the user.
 
 							 Startup File
 
-# mpshrc_all 
+# mpshrc_all
 #
 # runs for any instance of mpsh
 
 
 # job handlers:
-setenv handler-t="!at"
-setenv handler-q="!batch-submit"
-setenv handler-w="!xterm -e (cat) &"
+setenv handler-t="at"
+setenv handler-q="batch-submit"
+setenv handler-w="xterm -e (cat) &"
 
 # These use `cat` because the remote shell is sh or bash.
-setenv handler-a="!rsh a31 cd (pwd) ';' `cat`"
-setenv handler-p="!rsh pi0 cd (pwd) ';' `cat`"
+setenv handler-a="rsh a31 cd (pwd) ';' `cat`"
+setenv handler-p="rsh pi0 cd (pwd) ';' `cat`"
 
 
 # Here is a "misuse" of the handler feature. The "command text"
 # doesn't actually have to be a command...
 # Evaluate the "command" as a dc calculation:
-setenv handler-d="!dc"
+setenv handler-d="dc"
 # Send the "command" to the X Windows buffer:
-setenv handler-b="!xcb -s 0"
+setenv handler-b="xcb -s 0"
 
 # alias env variables:
 # This gives behaviour similar to bash's "!$" with "$!".
@@ -944,10 +1010,15 @@ setenv mpsh-hist-disp-l=ndxuec
 # prompt
 setenv mpsh-prompt="!echo (date '+%M') "(hostname)" 'mpsh% '"
 
+
 # aliases
 alias F="fg %-"
 alias M="! | more"
 alias "?=!.parsed"
+
+
+# macros
+macro ~/=$HOME/
 
 
 						  Login Startup File
@@ -963,3 +1034,4 @@ echo Welcome to (hostname)
 echo
 cat /etc/motd
 echo
+

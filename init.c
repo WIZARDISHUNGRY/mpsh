@@ -79,17 +79,14 @@ char *env[];
 	int ret;
 
 
-	control_term = open("/dev/tty",O_RDONLY,0x00);
+	init_terminal();
 
 	parse_depth = 0;
 
-	if(control_term == -1)
-		report_error("Error opening device","/dev/tty",0,1);
-
 	/* Init environment variables & search path */
 	init_global_env(env);
-	search_path = NULL;
 	init_command_path_list();
+	init_search_path();
 	update_search_path();
 	init_internal_env();
 
@@ -106,7 +103,7 @@ char *env[];
 
 	if(argc == 1 || strcmp(argv[1],"-n") != 0) {
 		home = get_env("HOME");
-		if(home) {
+		if(home && home != (char *) -1) {
 			sprintf(buff,"%s/.mpshrc_all",home);
 			run_script(buff,1);
 			if(argv[0][0] == '-') { /* Login shell */

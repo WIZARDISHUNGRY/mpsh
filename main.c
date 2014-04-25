@@ -73,13 +73,16 @@ main.c:
 #include <readline/readline.h>
 #endif
 
+#define LINE_BUFF_SIZE 1024
+
 
 
 #include "mpsh.h"
 #include "state.h"
 
+/*
 struct word_list *global_env;
-struct word_list *search_path;
+*/
 
 int control_term;
 
@@ -90,25 +93,27 @@ int argc;
 char *argv[];
 char *env[];
 {
-#ifdef READLINE
 	char *line;
-#else
-	char line[1024];
-#endif
 	char *pr;
+	int len;
 
+#ifndef READLINE
+	line = (char *) malloc(LINE_BUFF_SIZE+1);
+#endif
 
 	init_all(argc,argv,env);
 
 	setpgid(getpid(),getpid());
 	signal(SIGTTOU,SIG_IGN);
-	tcsetpgrp(control_term,getpgrp());
+	set_terminal(0);
+
 
 
 #ifdef READLINE
 	for(;;) {
 		parse_depth = 0;
-		if(line = readline(pr=get_prompt())) {
+		pr = get_prompt();
+		if(line = readline(pr)) {
 			parse_and_run(line,INTERACTIVE);
 		} else {
 			/* EOF */
@@ -117,11 +122,12 @@ char *env[];
 				show_jobs(NULL,-1);
 			} else {
 				puts("");
-				if(strcmp(get_env("mpsh-eof-exit"),"1") == 0) 
+				if(true_or_false(get_env("mpsh-eof-exit")))
 					exit(0);
 			}
 		}
 		free(pr);
+		free(line);
 	}
 
 #else
@@ -130,16 +136,20 @@ char *env[];
 		pr = get_prompt();
 		printf("%s",pr);
 		free(pr);
-		if(gets(line)) {
+		if(fgets(line,LINE_BUFF_SIZE,stdin)) {
+			len = strlen(line);
+			if(line > 0 && line[len-1] == '\n')
+				line[len-1] = '\0';
 			parse_and_run(line,INTERACTIVE);
 		} else {
 			/* EOF */
 			if(number_of_jobs() > 0 ) {
 				puts("");
+				clearerr(stdin);
 				show_jobs(NULL,-1);
 			} else {
 				puts("");
-				if(strcmp(get_env("mpsh-eof-exit"),"1") == 0) 
+				if(true_or_false(get_env("mpsh-eof-exit")))
 					exit(0);
 			}
 		}
@@ -155,6 +165,9 @@ int interactive;
 	char *pt;
 	struct command *command;
 	struct command *initial_command;
+	int ret;
+
+	ret = 0;
 
 	if(parse_depth++ > MAX_PARSE_DEPTH) {
 		report_error("Excessive parse depth",NULL,0,0);
@@ -163,30 +176,30 @@ int interactive;
 
 	/* Init parse tree structs */
 	command = initial_command = init_command();
-	command->text = (char *) malloc(1024);
+	command->text = (char *) malloc(BUFF_SIZE);
 	command->text[0] = '\0';
 	command->state = STATE_SPACE;
 
-	pt = text_command;
+	pt = expand_macros(text_command);
 
 	while(command->state != STATE_DONE) {
 		if(*pt) {
 			add_command_text_letter(initial_command,*pt);
 			command = parse_char(command,*pt);
-			if(!command) return(0);
+			if(!command) return(1);
 			pt++;
 		} else {
 			command = parse_char(command,'\n');
-			if(!command) return(0);
+			if(!command) return(1);
 		}
 	}
 
 	if(initial_command->words != NULL) {
 		/* MORE PARSING */
 		shift_set_operators(initial_command);
+		if(!expand_env(initial_command)) goto skip;
 		expand_globbing(initial_command);
 		expand_job_num(initial_command);
-		if(!expand_env(initial_command)) goto skip;
 
 		/* This goes in the last command struct in the pipeline,
 		   rather than the first, because of the job entry mechanism.
@@ -207,7 +220,7 @@ int interactive;
 		command->dir = dup_cwd();
 
 		/* EXECUTE COMMAND */
-		exec_command(initial_command);
+		ret = exec_command(initial_command);
 	}
 
 	check_for_job_exit();
@@ -216,7 +229,7 @@ int interactive;
 
 	free_command(initial_command);
 
-	return;
+	return(ret);
 }
 
 

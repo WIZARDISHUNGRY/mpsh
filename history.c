@@ -792,13 +792,36 @@ char *pt;
 update_history_setting(str)
 char *str;
 {
-	show_history_sub = atoi(str);
+	int v;
+
+	v = true_or_false(str);
+
+	if(v == 0 || v == 1) {
+		show_history_sub = v;
+		return(1);
+	}
+	report_error("Setting requires true or false value",str,0,0);
+	return(0);
 }
 
 char *dup_history_dir(h) 
 int h;
 {
 	return(strdup(history[h]->dir));
+}
+
+exit_value(code,status)
+int code,status;
+{
+	int ret;
+
+	if(code == CLD_EXITED) {
+		ret = status;
+	} else {
+		ret = 0;
+	}
+
+	return(ret);
 }
 
 set_exit_status(hp,code,status)

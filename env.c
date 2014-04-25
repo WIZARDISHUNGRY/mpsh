@@ -63,7 +63,11 @@ env.c:
 
 
 #include "mpsh.h"
+#include "env.h"
 #include "version.h"
+
+struct env_list *global_env;
+struct env_list *set_env();
 
 struct internal_variables {
 	char	*name;
@@ -71,7 +75,6 @@ struct internal_variables {
 	int		(*fn)();
 } ;
 
-int update_version();
 int update_prompt_string();
 int update_history_setting();
 int update_cdhistory_setting();
@@ -81,386 +84,97 @@ int update_nice();
 int update_null();
 
 struct internal_variables int_vars[] = {
-	/* mpsh-version MUST be entry [0] */
-	"mpsh-version=",		mpsh_version,	update_version,
-	"mpsh-prompt=",			"mpsh$ ",		update_prompt_string,
-	"mpsh-history=",		"1",			update_history_setting,
-	"mpsh-cdhistory=",		"1",			update_cdhistory_setting,
-	"mpsh-error-level=",	"1",			update_error_level,
-	"mpsh-umask=",			NULL,			update_umask,
-	"mpsh-nice=",			"10",			update_nice,
-	"mpsh-hist-disp=",		"nc",			update_null,
-	"mpsh-hist-disp-l=",	"nusxc",		update_null,
-	"mpsh-jobs-disp=",		"nrcm",			update_null,
-	"mpsh-jobs-disp-l=",	"eRhfcm",		update_null,
-	"mpsh-eof-exit=",		"1",			update_null,
+	"mpsh-version",		mpsh_version,	update_null,
+	"mpsh-prompt",		"mpsh$ ",		update_prompt_string,
+	"mpsh-history",		"true",			update_history_setting,
+	"mpsh-cdhistory",	"true",			update_cdhistory_setting,
+	"mpsh-error-level",	"1",			update_error_level,
+	"mpsh-umask",		"777",			update_umask,
+	"mpsh-nice",		"10",			update_nice,
+	"mpsh-hist-disp",	"nc",			update_null,
+	"mpsh-hist-disp-l",	"nusxc",		update_null,
+	"mpsh-jobs-disp",	"anrcm",		update_null,
+	"mpsh-jobs-disp-l",	"aeRhfcm",		update_null,
+	"mpsh-eof-exit",	"true",			update_null,
+	"mpsh-exp-nl",		"false",		update_null,
 	NULL, NULL, NULL
 } ;
 
 extern char *prompt_string;
 
-struct path_list {
-	char *dir;
-	char *command;
-	struct path_list *next;
-} ;
-
-struct path_list *new_path_list();
-struct path_list *command_path_list;
-
-init_command_path_list() {
-	command_path_list = NULL;
-}
-
 init_global_env(env)
 char *env[];
 {
 	int i;
-	struct word_list *w;
 
-	w = global_env = init_word();
+	global_env = NULL;
 
-	for(i=0; env[i]; i++) {
-		w->next = init_word_str(env[i]);
-		w = w->next;
-	}
+	for(i=0; env[i]; i++)
+		set_env(env[i]);
 }
 
 init_internal_env() {
 	int i;
-	char buff[1024];
+	char *buff;
 	mode_t um;
-
-	for(i=0; int_vars[i].name; i++) {
-		if(int_vars[i].def) {
-			sprintf(buff,"%s%s",int_vars[i].name,int_vars[i].def);
-			set_env_str(buff);
-		}
-	}
+	struct env_list *e;
+	int len;
 
 	/* Set mpsh-umask to actual umask inherited from parent process. */
 	um = umask(0022);
 	umask(um);
-	sprintf(buff,"mpsh-umask=%03o",um);
-	set_env_str(buff);
 
-}
+	for(i=0; int_vars[i].name; i++) {
+		len = strlen(int_vars[i].name) +
+			strlen(int_vars[i].def) + 2;
+		buff = (char *) malloc(len);
+		if(strcmp(int_vars[i].name,"mpsh-umask") == 0) 
+			sprintf(buff,"mpsh-umask=%03o",um);
+		else
+			sprintf(buff,"%s=%s",int_vars[i].name,int_vars[i].def);
+		e = set_env(buff);
 
-
-update_search_path() {
-	struct word_list *pth;
-	struct path_list *c;
-	char *pt;
-	char *var;
-	struct dirent *dp;
-	DIR *dirp;
-
-	if(search_path) 
-		free_word_list(search_path);
-
-	pth = search_path = init_word();
-
-	var = pt = get_env("PATH");
-
-	while(*pt) {
-		if(*pt == ':') {
-			pth->next = init_word();
-			pth = pth->next;
-		} else {
-			add_letter_to_word(pth,*pt);
-		}
-		pt++;
-	}
-	free(var);
-
-
-	/* Update list of commands based on new PATH */
-	if(command_path_list) {
-		free_path_list(command_path_list);
-		command_path_list = NULL;
+		/* mpsh-version should be read-only, after being initially set */
+		if(strcmp(int_vars[i].name,"mpsh-version") == 0)
+			e->flags ^= ENV_FLAG_READONLY;
+		
+		free(buff);
 	}
 
-	for(pth=search_path; pth; pth=pth->next) {
-		/* "." is a (very) special case. */
-		if(strcmp(pth->word,".") == 0) {
-			if(!command_path_list) {
-				command_path_list = c =
-					new_path_list(pth->word,NULL);
-			} else {
-				c->next = new_path_list(pth->word,NULL);
-				c = c->next;
-			}
-		} else {
-			/* For each entry in search_path, read through directory */
-			dirp = opendir(pth->word);
-			if(dirp) {
-				while(dp = readdir(dirp)) {
-					if(!command_path_list) {
-						command_path_list = c =
-							new_path_list(pth->word,dp->d_name);
-					} else {
-						c->next = new_path_list(pth->word,dp->d_name);
-						c = c->next;
-					}
-				}
-				closedir(dirp);
-			}
-		}
-	}
-	return;
-}
-
-free_path_list(c)
-struct path_list *c;
-{
-	while(c) {
-		if(c->dir) free(c->dir);
-		if(c->command) free(c->command);
-		free(c);
-		c = c->next;
-	}
-}
-
-struct path_list *new_path_list(dir,command)
-char *dir, *command;
-{
-	struct path_list *c;
-
-	c = (struct path_list *) malloc(sizeof(struct path_list));
-	c->next = NULL;
-	c->dir = (char *) malloc(strlen(dir)+1);
-	strcpy(c->dir,dir);
-	if(command) {
-		c->command = (char *) malloc(strlen(command)+1);
-		strcpy(c->command,command);
-	} else {
-		c->command = NULL;
-	}
-	return(c);
-}
-
-char *find_path(arg)
-char *arg;
-{
-	struct word_list *w;
-	struct path_list *c;
-	struct stat st;
-	char buff[256];
-
-	if(!arg[0] || arg[0] == '[') {
-		return(NULL);
-	}
-
-	if(index(arg,'/') != NULL) {
-		return(strdup(arg));
-	}
-
-	w = search_path;
-
-	for(c=command_path_list; c; c=c->next) {
-		if(strcmp(c->dir,".") == 0) { 
-			/* Search current directory by hand */
-			if(stat(arg,&st) == 0) {
-				return(strdup(arg));
-			}
-		} else {
-			if(strcmp(arg,c->command) == 0) {
-				sprintf(buff,"%s/%s",c->dir,arg);
-				return(strdup(buff));
-			}
-		}
-	}
-
-
-	/*
-		If we don't find the command in our cache, try all PATH
-		entries by hand, and if we find a result, update the cache.
-	*/
-
-	do {
-		sprintf(buff,"%s/%s",w->word,arg);
-		if(stat(buff,&st) == 0) {
-			update_search_path();
-			return(strdup(buff));
-		}
-		w = w->next;
-	} while(w->next);
-
-	return(NULL);
-}
-
-set_env(command)
-struct command *command;
-{
-	char *str;
-
-	if(!command->words->next) {
-		report_error("Missing setenv option",NULL,0,0);
-		return(0);
-	}
-
-	str = command->words->next->word;
-	set_env_str(str);
-}
-
-set_env_str(str)
-char *str;
-{
-	int sl;
-	struct word_list *w;
-	int len;
-	int i;
-
-	for(sl=0; str[sl] && str[sl] != '='; sl++) ;
-	if(str[sl] == '=') sl++;
-	else {
-		report_error("Syntax error",str,0,0);
-		return;
-	}
-
-	for(w=global_env->next; w; w=w->next) {
-		if(strncmp(str,w->word,sl) == 0) {
-			string_to_word(str,&w);
-			goto skip;
-		}
-	}
-	append_word(&global_env,init_word_str(str));
-	skip:
-
-	if(strncmp("PATH=",str,5) == 0) update_search_path();
-	if(strncmp("mpsh-",str,5) == 0) {
-		/* mpsh internal setting */
-		for(i=0; int_vars[i].name; i++) {
-			len = strlen(int_vars[i].name);
-			if(strncmp(str,int_vars[i].name,len) == 0) {
-				(*(int_vars[i].fn))(str+len);
-			}
-		}
-	}
-
-
-}
-
-char *get_env(env)
-char *env;
-{
-	char *search;
-	char *pt;
-	char *ret;
-	int len;
-	struct word_list *w;
-
-	len = strlen(env);
-	search = (char *) malloc(len+2);
-	strcpy(search,env);
-	search[len] = '=';
-	len++;
-	search[len] = '\0';
-
-    for(w=global_env->next; w; w=w->next) {
-		if(strncmp(search,w->word,len) == 0) {
-			pt = w->word+len;
-			len = strlen(pt);
-			ret = (char *) malloc(len+1);
-			strcpy(ret,pt);
-			free(search);
-			return(ret);
-		}
-	}
-	free(search);
-	return(NULL);
-}
-
-expand_env(curr)
-struct command *curr;
-{
-	struct word_list *w;
-	char buff[256];
-	char *val;
-	char *pt;
-	int i, len;
-	int pre;
-	char *orig;
-	char *tmp;
-
-	while(curr) {
-		w = curr->words;
-		while(w) {
-			orig = w->word;
-			for(pre=0; orig[pre]; pre++) {
-				pt = orig + pre;
-				if(*pt == '$') {
-					/* Expand env variable. */
-					len = strlen(pt+1);
-					for(i=len; i; i--) {
-						strncpy(buff,pt+1,i);
-						buff[i] = '\0';
-						val = get_env(buff);
-						if(val) {
-							if(val[0] == '!') {
-								tmp = read_from_command(val+1);
-								free(val);
-								val = tmp;
-							}
-							*pt = '\0';
-							if(!insert_parse(curr,w,val,pt+1+i)) return(0);
-							break;
-
-						}
-					}
-				}
-			}
-			w = w->next;
-		}
-		curr = curr->pipeline;
-	}
-	return(1);
 }
 
 /* Is this environment variable for children, or just internal? */
-public_env(e)
-char *e;
+public_env(str)
+char *str;
 {
-	char *pt;
+	struct env_list *e;
 
-	/* variable alias: */
-	pt = index(e,'=');
-	if(pt[1] == '!') {
-		return(0);
-	}
+	e = find_env_var(str);
 
-	/* Internal settings */
-	if(strncmp(e,"mpsh-",5) == 0)
-		return(0);
+	if(!e) return(0);
 
-	return(1);
+	if(e->flags & ENV_FLAG_INHERIT)
+		return(1);
+	
+	return(0);
 }
 
 display_env(env_type,quoted)
 int env_type;
 int quoted;
 {
-	struct word_list *w;
+	struct env_list *e;
 	char *pt;
 	char buff[64];
-	int display;
 	int i;
 	int width;
 
 	if(!quoted) {
 		width = 0;
-		for(w=global_env->next; w; w=w->next) {
-			pt = w->word;
-			display = 0;
+		for(e=global_env; e; e=e->next) {
+			pt = e->var;
 
-			if(env_type == ENV_PUBLIC && public_env(pt)) display=1;
-			if(env_type == ENV_ALIAS && alias_env(pt)) display=1;
-			if(env_type == ENV_INTERNAL && strncmp(pt,"mpsh-",5) == 0) 
-				display=1;
-			if(env_type == ENV_HANDLER && strncmp(pt,"handler-",8) == 0) 
-				display=1;
-
-			if(display) {
+			if(e->flags & env_type) {
 				for(i=0; pt[i]; i++)
 					if(pt[i] == '=') break;
 				if(i > width) width = i;
@@ -468,74 +182,24 @@ int quoted;
 		}
 	}
 
-	for(w=global_env->next; w; w=w->next) {
-		pt = w->word;
-		display = 0;
+	for(e=global_env; e; e=e->next) {
+		pt = e->var;
 
-		if(env_type == ENV_PUBLIC && public_env(pt)) display=1;
-		if(env_type == ENV_ALIAS && alias_env(pt)) display=1;
-		if(env_type == ENV_INTERNAL && strncmp(pt,"mpsh-",5) == 0) display=1;
-		if(env_type == ENV_HANDLER && strncmp(pt,"handler-",8) == 0) 
-				display=1;
-
-		if(display) {
+		if(e->flags & env_type) {
 			for(i=0; pt[i]; i++)
 				if(pt[i] == '=') break;
 			strncpy(buff,pt,i);
+			pt += i;
+			if(*pt) pt++;
 			buff[i] = '\0';
 			if(quoted)
-				printf("%s=\"%s\"\n",buff,pt+i+1);
+				printf("%s=\"%s\"\n",buff,pt);
 			else
-				printf("%-*s = %s\n",width,buff,pt+i+1);
+				printf("%-*s = %s\n",width,buff,pt);
 		}
 	}
 }
 
-check_command_glob(w)
-struct word_list *w;
-{
-	struct path_list *c;
-	char *arg;
-	char buff[256];
-
-	arg = w->word;
-
-	if(!arg) return;
-
-	if(arg[0] == '[') return;
-
-	if(index(arg,'?') != 0 || index(arg,'*') != 0 || index(arg,'[') != 0) {
-		for(c=command_path_list; c; c=c->next) {
-			if(fnmatch(arg,c->command,FNM_PATHNAME) == 0) {
-				sprintf(buff,"%s/%s",c->dir,c->command);
-				string_to_word(buff,&w);
-				return;
-			}
-		}
-	}
-}
-
-update_version(str)
-char *str;
-{
-	char buff[64];
-	int len;
-	struct word_list *w;
-
-	report_error("Read-only variable",str,0,0);
-
-	sprintf(buff,"%s%s",int_vars[0].name,int_vars[0].def);
-
-	len = strlen(int_vars[0].name);
-	for(w=global_env->next; w; w=w->next) {
-		if(strncmp(int_vars[0].name,w->word,len) == 0) {
-			string_to_word(buff,&w);
-			return;
-		}
-	}
-
-	append_word(&global_env,init_word_str(buff));
-}
 
 update_umask(str)
 char *str;
@@ -544,6 +208,8 @@ char *str;
 
 	sscanf(str,"%o",&u);
 	umask(u);
+
+	return(1);
 }
 
 update_nice(str)
@@ -551,39 +217,15 @@ char *str;
 {
 	if(atoi(str) < 1) {
 		report_error("mpsh-nice should be an integer greater than 0",str,0,0);
-		set_env_str("mpsh-nice=10");
+		return(0);
 	}
+	return(1);
 }
-
-delete_env(src)
-char *src;
-{
-	int len;
-	char *str;
-	struct word_list *w, *last;
-
-	len = strlen(src)+1;
-	str = (char *) malloc(len);
-	sprintf(str,"%s=",src);
-	last = global_env;
-
-	for(w=global_env->next; w; w=w->next) {
-		if(strncmp(str,w->word,len) == 0) {
-			last->next = w->next;
-			free(str);
-			return;
-		}
-		last = w;
-	}
-	report_error("Variable not found",src,0,0);
-	free(str);
-}
-
 
 update_null(str)
 char *str;
 {
-	;
+	return(1);
 }
 
 insert_parse(curr,w,str,str2)
@@ -595,8 +237,6 @@ char *str, *str2;
 	struct command *further_commands;
 	struct word_list *last;
 	char *append;
-	int flags;
-	int pipe_flags;
 
 	append = strdup(str2);
 
@@ -605,8 +245,8 @@ char *str, *str2;
 	w->next = NULL;
 	further_commands = curr->pipeline;
 	curr->pipeline = NULL;
-	flags = curr->flags;
-	pipe_flags = curr->pipe_io_flags;
+
+	set_parse_state_word(curr);
 
 	if(str) {
 		curr = insert_parse_string(curr,str);
@@ -615,44 +255,288 @@ char *str, *str2;
 
 	last = find_last_word(&curr->words);
 	append_string_to_word(last,append);
+
 	free(append);
 
-	while(curr->pipeline) curr = curr->pipeline;
 	curr->pipeline = further_commands;
-	curr->flags = flags;
-	curr->pipe_io_flags = pipe_flags;
-
-	/*
-	while(curr->pipeline) curr = curr->pipeline;
-	*/
-
-	last = find_last_word(&curr->words);
 	last->next = save_args;
 
 	return(1);
 }
 
-/* Is this env a command alias? */
-alias_env(e)
-char *e;
-{
-	char *pt;
 
-	/* variable alias: */
-	pt = index(e,'=');
-	if(pt[1] != '!') {
-		return(0);
+/* NEW ENV STRUCTS */
+
+struct env_list *set_env(str)
+char *str;
+{
+	struct env_list *e;
+	int len;
+	char *name, *val, *pt;
+
+	len = 0;
+	for(pt=str; *pt; pt++) {
+		if(*pt == '=') break;
+		len++;
+	}
+	if(!*pt) {
+		report_error("Syntax error",str,0,0);
+		return(NULL);
 	}
 
-	/* Internal settings */
-	if(strncmp(e,"mpsh-",5) == 0)
-		return(0);
+	val = strdup(pt+1);
+	name = malloc(len+1);
+	strncpy(name,str,len);
+	name[len] = '\0';
 
-	/* Job Handler */
-	if(strncmp(e,"handler-",8) == 0)
-		return(0);
+	if(!check_env_setting(name,val)) return(NULL);
 
+	/* Check to see if it already exists */
+	e = find_env_var(name);
+
+	if(e) {
+		if(e->flags & ENV_FLAG_READONLY) {
+			report_error("Read-only variable",name,0,0);
+			return(NULL);
+		}
+		e->flags = 0x0000;
+		free(e->var);
+	} else {
+		e = alloc_env_var();
+	}
+
+	e->var = strdup(str);
+	e->len = len;
+	e->flags = ENV_FLAG_INHERIT; /* default */
+
+	if(strncmp(name,"mpsh-",5) == 0) {
+		/* Leave all of this to settings fn ??? */
+		e->flags |= ENV_FLAG_SETTING;
+		e->flags |= ENV_FLAG_NODELETE;
+		e->flags &= ENV_NOT_INHERITED;
+	}
+
+	if(strncmp(name,"handler-",8) == 0) {
+		e->flags |= ENV_FLAG_HANDLER;
+		e->flags &= ENV_NOT_INHERITED;
+	}
+
+	if(val[0] == '!') {
+		e->flags |= ENV_FLAG_EXEC;
+		e->flags &= ENV_NOT_INHERITED;
+		if(!(e->flags & ENV_FLAG_TYPE))
+			e->flags |= ENV_FLAG_ALIAS;
+	}
+
+	if(strcmp(name,"PATH") == 0) update_search_path();
+
+	return(e);
+}
+
+struct env_list *alloc_env_var() {
+	struct env_list *e;
+
+	if(global_env) {
+		for(e=global_env; e->next; e=e->next) ;
+		e->next = (struct env_list *) malloc(sizeof(struct env_list));
+		e = e->next;
+	} else {
+		e = global_env =
+			(struct env_list *) malloc(sizeof(struct env_list));
+	}
+	e->var = NULL;
+	e->next = NULL;
+	e->flags = 0x00;
+	e->len = 0;
+
+	return(e);
+}
+
+struct env_list *find_env_var(str)
+char *str;
+{
+	struct env_list *e;
+	int len;
+
+	len = strlen(str);
+
+	for(e=global_env; e; e=e->next)
+		if(e && len == e->len && strncmp(str,e->var,len) == 0) return(e);
+
+	return(NULL);
+}
+
+char *get_env(str)
+char *str;
+{
+	struct env_list *e;
+	char *pt;
+
+	e = find_env_var(str);
+	if(e) {
+		pt = e->var + e->len + 1;
+		if(e->flags & ENV_FLAG_EXEC)
+			return(read_from_command(pt+1));
+		return(strdup(pt));
+	}
+	return(NULL);
+}
+
+
+delete_env(src)
+char *src;
+{
+	int len;
+	struct env_list *e, *last;
+
+	len = strlen(src);
+	last = NULL;
+
+	for(e=global_env; e; e=e->next) {
+		if(e->len == len && strncmp(src,e->var,len) == 0) {
+			if(e->flags & ENV_FLAG_NODELETE) {
+				report_error("Undeletable variable",src,0,0);
+				return;
+			}
+			if(last)
+				last->next = e->next;
+			else
+				global_env = e->next;
+			free(e->var);
+			free(e);
+			return;
+		}
+		last = e;
+	}
+	report_error("Variable not found",src,0,0);
+}
+
+expand_env(curr)
+struct command *curr;
+{
+	struct word_list *w;
+	char *buff;
+	char *val;
+	char *pt;
+	int i, len;
+	int pre;
+	char *orig;
+
+
+	buff = (char *) malloc(BUFF_SIZE);
+
+	while(curr) {
+		w = curr->words;
+		while(w) {
+			retry:
+			orig = w->word;
+			for(pre=0; orig[pre]; pre++) {
+				pt = orig + pre;
+				if(*pt == '$') {
+					/* Expand env variable. */
+					len = strlen(pt+1);
+					for(i=len; i; i--) {
+						strncpy(buff,pt+1,i);
+						buff[i] = '\0';
+						val = get_env(buff);
+						if(val == (char *) -1) return(0);
+						if(val) {
+							*pt = '\0';
+							if(!insert_parse(curr,w,val,pt+1+i)) return(0);
+							goto retry; 
+						}
+					}
+				}
+			}
+			next:
+			w = w->next;
+		}
+		curr = curr->pipeline;
+	}
+
+	free(buff);
 	return(1);
+}
+
+
+check_env_setting(name,val)
+char *name, *val;
+{
+	int i;
+
+	if(strncmp(name,"mpsh-",5)) return(1);
+
+	for(i=0; int_vars[i].name; i++) {
+		if(strcmp(name,int_vars[i].name) == 0) {
+			return((*(int_vars[i].fn))(val));
+		}
+	}
+
+	return(0);
+}
+
+
+char **build_env(command) 
+struct command *command;
+{
+	int len, i;
+	char **call_env;
+	struct env_list *e;
+
+	len=0;
+	for(e=global_env; e; e=e->next) 
+		if(e->flags & ENV_FLAG_INHERIT) len++;
+
+	len += 2;
+
+	call_env = (char **) malloc(sizeof(char *)*len);
+
+	i=0;
+	for(e=global_env; e; e=e->next) {
+		if(e->flags & ENV_FLAG_INHERIT) {
+			call_env[i] = e->var;
+			i++;
+		}
+	}
+
+	call_env[i] = NULL;
+
+	return(call_env);
+}
+
+clear_env(arg)
+char *arg;
+{
+	struct env_list *e;
+	int env_type;
+	char buff[64], *src, *dst;
+
+	env_type = 0x00;
+
+	if(strcmp(arg,"-c") == 0) env_type = ENV_FLAG_INHERIT;
+	if(strcmp(arg,"-ca") == 0) env_type = ENV_FLAG_ALIAS;
+	if(strcmp(arg,"-ch") == 0) env_type = ENV_FLAG_HANDLER;
+	if(strcmp(arg,"-ci") == 0) env_type = ENV_FLAG_SETTING;
+
+	e = global_env;
+
+	while(e) {
+		if((e->flags & ENV_FLAG_TYPE) == env_type) {
+			if(env_type == ENV_FLAG_SETTING) e->flags ^= ENV_FLAG_NODELETE;
+			src = e->var;
+			dst = buff;
+			while(*src != '=')
+				*dst++ = *src++;
+			*dst = '\0';
+			delete_env(buff);
+		} 
+			e = e->next;
+	}
+
+
+	if(strcmp(arg,"-ci") == 0) 
+		init_internal_env();
+
 }
 
 

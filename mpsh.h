@@ -122,9 +122,6 @@ struct command {
 	char quote_stack[QUOTE_STACK_DEPTH];
 } ;
 
-extern struct word_list *global_env;
-extern struct word_list *search_path;
-
 struct command *parse_char();
 struct command *parse_char_limited();
 struct word_list *init_word();
@@ -145,6 +142,8 @@ char *dup_history_dir();
 
 
 char *get_env();
+char *new_get_env();
+
 char *words_to_string();
 char *find_path();
 
@@ -158,9 +157,7 @@ char *end_of_string();
 char *dup_cwd();
 
 char *find_alias();
-
-
-extern int control_term;
+char *expand_macros();
 
 
 /* For builtin commands: */
@@ -180,4 +177,6 @@ int parse_depth;
 #define ENV_INTERNAL	2
 #define ENV_HANDLER		3
 
+
+#define BUFF_SIZE 1024
 

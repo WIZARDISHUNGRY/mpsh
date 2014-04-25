@@ -4,21 +4,21 @@
 
 
 # job handlers:
-setenv handler-t="!at"
-setenv handler-q="!batch-submit"
-setenv handler-w="!xterm -e (cat) &"
+setenv handler-t="at"
+setenv handler-q="batch-submit"
+setenv handler-w="xterm -e (cat) &"
 
 # These use `cat` because the remote shell is sh or bash.
-setenv handler-a="!rsh a31 cd (pwd) ';' `cat`"
-setenv handler-p="!rsh pi0 cd (pwd) ';' `cat`"
+setenv handler-a="rsh a31 cd (pwd) ';' `cat`"
+setenv handler-p="rsh pi0 cd (pwd) ';' `cat`"
 
 
 # Here is a "misuse" of the handler feature. The "command text"
 # doesn't actually have to be a command...
 # Evaluate the "command" as a dc calculation:
-setenv handler-d="!dc"
+setenv handler-d="dc"
 # Send the "command" to the X Windows buffer:
-setenv handler-b="!xcb -s 0"
+setenv handler-b="xcb -s 0"
 
 # alias env variables:
 # This gives behaviour similar to bash's "!$" with "$!".
@@ -28,7 +28,6 @@ setenv handler-b="!xcb -s 0"
 setenv !="!!.parsed | sed 's/.* //'"
 
 # $x reads the X Windows buffer.
-# Uncomment and tweak first version for remote use.
 setenv x="!xcb -p 0"
 
 setenv YY="!date +%Y-%m-%d"
@@ -61,5 +60,9 @@ setenv mpsh-prompt="!echo (date '+%M') "(hostname)" 'mpsh% '"
 alias F="fg %-"
 alias M="! | more"
 alias "?=!.parsed"
+
+
+# macros
+macro ~/=$HOME/
 
 

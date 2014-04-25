@@ -337,7 +337,7 @@ struct command *command;
 		for(w = curr->words; w; w=w->next) {
 			len += strlen(w->word)+1;
 		}
-		len += 2;
+		len += 4;
 	}
 
 	dest = (char *) malloc(len);
@@ -351,9 +351,9 @@ struct command *command;
 		}
 		if(curr->pipeline) {
 			if(curr->flags & FLAG_PIPE) 
-				strcat(dest,"|");
+				strcat(dest," |");
 			else
-				strcat(dest,";");
+				strcat(dest," ;");
 		}
 	}
 
@@ -369,4 +369,23 @@ struct word_list *w;
 	}
 }
 
+true_or_false(src)
+char *src;
+{
+	char *str;
+	char *pt;
+	int v;
+
+	str = strdup(src);
+	for(pt=str; *pt; pt++) *pt = tolower(*pt);
+
+	v = -1;
+	if(strcmp(str,"true") == 0) v = 1;
+	else if(strcmp(str,"false") == 0) v = 0;
+	else if(strcmp(str,"1") == 0) v = 1;
+	else if(strcmp(str,"0") == 0) v = 0;
+
+	free(str);
+	return(v);
+}
 

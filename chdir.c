@@ -169,8 +169,12 @@ int which;
 		return(1);
 	}
 
-	if(arg == NULL) 
+	if(arg == NULL) {
 		arg = get_env("HOME");
+		if(arg == (char *) -1) {
+			return(2);
+		}
+	}
 
 	if(arg[0] == '!') { /* CD history */
 		pt = arg+1;
@@ -232,7 +236,16 @@ char *arg;
 update_cdhistory_setting(str)
 char *str;
 {
-	show_cdhistory_sub = atoi(str);
+	int v;
+
+	v = true_or_false(str);
+
+	if(v == 0 || v == 1) {
+		show_cdhistory_sub = v;
+		return(1);
+	}
+	report_error("Setting requires true or false value",str,0,0);
+	return(0);
 }
 
 

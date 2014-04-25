@@ -83,6 +83,7 @@ char **build_env();
 char **build_argv();
 
 
+/* return value is process exit value style. 0 = good. */
 exec_command(command)
 struct command *command;
 {
@@ -110,7 +111,7 @@ struct command *command;
 			ret = call_exec(command,prev_pipe[0],next_pipe[1]);
 		}
 
-		if(ret == 0) return;
+		if(ret == 0) return(1);
 
 		prev_pipe[0] = next_pipe[0];
 		prev_pipe[1] = next_pipe[1];
@@ -151,8 +152,10 @@ struct command *command;
 			job = add_job_smp(command);
 		} else {
 			job = add_job(command);
-			if((command->flags & FLAG_BACK) == 0x00)
-				wait_job(job);
+			if((command->flags & FLAG_BACK) == 0x00) {
+				ret = wait_job(job);
+				return(ret);
+			}
 		}
 	}
 }
@@ -191,7 +194,7 @@ int pipe_in, pipe_out;
 			if(isatty(fileno(stdout))) {
 				pgrp = getpid();
 				setpgid(pgrp,pgrp);
-				tcsetpgrp(control_term,pgrp);
+				set_terminal(0);
 			}
 		} else {
 			/*
@@ -322,15 +325,20 @@ int pipe_in, pipe_out;
 			pt = command->words->word+1;
 			pt[strlen(pt)-1] = '\0';
 			if(command->flags & FLAG_BACK)
-				parse_and_run(pt,NONINTERACTIVE);
+				ret = parse_and_run(pt,NONINTERACTIVE);
 			else
-				parse_and_run(pt,INTERACTIVE);
-			exit(0);
+				ret = parse_and_run(pt,INTERACTIVE);
+			/* Reverse logic from C style to exit value style */
+			if(ret)
+				_exit(0);
+			else
+				_exit(1);
 		}
 
 		if(command->echo_text) {
 			puts(command->echo_text);
-			exit(0);
+			fflush(stdout);
+			_exit(0);
 		}
 
 		if(try_exec_builtin(1,command)) _exit(0);
@@ -348,7 +356,6 @@ int pipe_in, pipe_out;
 	} else { /* Parent process */
 		if(pipe_in != -1) close(pipe_in);
 		if(pipe_out != -1) close(pipe_out);
-		/* parent. add job info on child */
 		command->pid = pid;
 	}
 
@@ -378,6 +385,9 @@ struct command *command;
 		report_error("Unknown job handler",NULL,command->job_handler,0,0);
 		return(0);
 	}
+	if(handler == (char *) -1) {
+		return(0);
+	}
 
 	if(command->handler_args) {
 		args = words_to_string(command->handler_args);
@@ -394,44 +404,9 @@ struct command *command;
 	}
 
 	buff = words_to_string(command->words);
-	send_to_command(command,buff,handler+1);
+	send_to_command(command,buff,handler);
 	free(handler);
 	return(1);
-}
-
-
-
-char **build_env(command) 
-struct command *command;
-{
-	struct word_list *w;
-	int len, i;
-	char **call_env;
-
-	len=0;
-	for(w=global_env->next; w->next; w=w->next) {
-		if(public_env(w->word)) len++;
-	}
-
-	len += 2;
-
-	call_env = (char **) malloc(sizeof(char *)*len);
-
-	i=0;
-	for(w=global_env->next; w->next; w=w->next) {
-		if(public_env(w->word)) {
-			call_env[i] = w->word;
-			i++;
-		} 
-	}
-	if(public_env(w->word)) {
-		call_env[i] = w->word;
-		i++;
-	}
-
-	call_env[i] = NULL;
-
-	return(call_env);
 }
 
 char **build_argv(command)
@@ -481,8 +456,8 @@ char *text, *comm;
 	if(pid == 0) { /* child. */
 		dup2(pipes[0],fileno(stdin));
 		close(pipes[1]);
-		parse_and_run(comm,NONINTERACTIVE);
-		_exit(1);
+		ret = parse_and_run(comm,NONINTERACTIVE);
+		_exit(ret);
 	} else { /* Parent process */
 		close(pipes[0]);
 		ret = write(pipes[1],text,strlen(text));
@@ -496,17 +471,39 @@ wait_for_process(pid)
 int pid;
 {
 	siginfo_t infop;
+	int ret;
+	int code, status;
 	int st;
+
+	ret = 0; /* Default return value */
+	code = status = 0;
 
 #ifdef BSD
 	while(waitpid(pid,&st,WCONTINUED|WNOHANG|WUNTRACED) != pid)
 		;
+
+	if(WIFEXITED(st))
+		ret = WEXITSTATUS(st);
+	else
+		ret = WIFSIGNALED(st);
+
 #else
 	waitid(P_PID,pid,&infop,WEXITED);
+
+	code = infop.si_code;
+
+	if(infop.si_signo == SIGCLD) {
+		status = infop.si_status;
+	}
+
+	ret = exit_value(code,status);
+
 #endif
 
 	signal(SIGTTIN,SIG_IGN);
 	signal(SIGTTOU,SIG_IGN);
+
+	return(ret);
 }
 
 
@@ -519,8 +516,9 @@ char *text_command;
 	int i;
 	FILE *in;
 	struct word_list *w, *words;
+	int ret;
 
-	output = (char *) malloc(1024);
+	output = (char *) malloc(BUFF_SIZE);
 	output[0] = '\0';
 
 	pipe(pipes);
@@ -533,14 +531,14 @@ char *text_command;
 		devnull = open("/dev/null",O_WRONLY);
 		dup2(devnull,fileno(stdin));
 		*/
-		parse_and_run(text_command,NONINTERACTIVE);
-		_exit(1);
+		ret = parse_and_run(text_command,NONINTERACTIVE);
+		fflush(stdout);
+		_exit(ret);
 	} else { /* Parent process */
 		close(pipes[1]);
-		wait_for_process(pid);
 		in = fdopen(pipes[0],"r");
 		w = words = NULL;
-		while(fgets(output,1024,in)) {
+		while(fgets(output,BUFF_SIZE,in)) {
 			i = strlen(output)-1;
 			if(i >= 0 && output[i] == '\n')
 				output[i] = '\0';
@@ -554,53 +552,46 @@ char *text_command;
 		}
 		fclose(in);
 		free(output);
+		ret = wait_for_process(pid);
+		if(ret != 0) 
+			words = (struct word_list *) -1;
 		return(words);
 	}
 }
 
-
 char *read_from_command(text_command)
 char *text_command;
 {
-	int pipes[2];
-	int pid;
-	char *output;
-	int i;
-	int ret;
+	struct word_list *ret_w, *w;
+	int len;
+	char *buff;
+	char *sep;
 
-	if(parse_depth++ > MAX_PARSE_DEPTH) {
-		report_error("Excessive parse depth",NULL,0,0);
-		return(NULL);
+	if(true_or_false(get_env("mpsh-exp-nl")))
+		sep = "\n";
+	else
+		sep = " ";
+
+	ret_w = words_from_command(text_command);
+
+	if(ret_w == (struct word_list *)-1) return((char *)-1);
+
+	len = 0;
+	for(w=ret_w; w; w=w->next)
+		len += strlen(w->word)+1;
+
+	buff = (char *) malloc(len);
+
+	buff[0] = '\0';
+
+	for(w=ret_w; w; w=w->next) {
+		strcat(buff,w->word);
+		if(w->next) strcat(buff,sep);
 	}
 
-	output = (char *) malloc(1024);
-	output[0] = '\0';
+	free_word_list(ret_w);
 
-	pipe(pipes);
-	pid = fork();
-
-	if(pid == 0) { /* child. */
-		dup2(pipes[1],fileno(stdout));
-		close(pipes[0]);
-		close(pipes[1]);
-		/*
-		devnull = open("/dev/null",O_WRONLY);
-		dup2(devnull,fileno(stdin));
-		*/
-		parse_and_run(text_command,NONINTERACTIVE);
-		exit(1);
-	} else { /* Parent process */
-		close(pipes[1]);
-		wait_for_process(pid);
-		ret = read(pipes[0],output,1024);
-		close(pipes[0]);
-		output[ret] = '\0';
-		i = strlen(output)-1;
-		if(i >= 0 && output[i] == '\n')
-			output[i] = '\0';
-		return(output);
-	}
+	return(buff);
 }
-
 
 

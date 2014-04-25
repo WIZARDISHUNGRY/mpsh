@@ -140,6 +140,8 @@ int ch;
 					str_to_exec = find_last_word(&command->words)->word +
 						command->start_of_sub;
 					ret_words = words_from_command(str_to_exec+1);
+					if(ret_words == (struct word_list *) -1)
+						return(NULL);
 					str_to_exec[0] = '\0';
 					if(!parse_word_list(command,ret_words))
 						return(NULL);
@@ -799,13 +801,8 @@ char *text;
 		return(NULL);
 	}
 
-	command->state = STATE_WORD;
-
 	for(str=text; *str; str++) {
-		if(*str == '\n') 
-			ret = parse_char_limited(command,' ');
-		else 
-			ret = parse_char_limited(command,*str);
+		ret = parse_char_limited(command,*str);
 		if(!ret) return(NULL);
 		command = ret;
 	}
@@ -909,7 +906,7 @@ int ch;
 				command->quote_depth--;
 			}
 
-
+			/*
 			if(ch == '\n') {
 				if(command->quote_depth > 0) {
 					report_mismatched_something(command);
@@ -930,6 +927,8 @@ int ch;
 				}
 				return(command);
 			}
+			*/
+
 			if((ch == ' ' || ch == '\t') && command->quote_depth == 0) {
 				command->state = STATE_SPACE;
 				if(command->words->next == NULL) {
@@ -1003,4 +1002,11 @@ int ch;
 	}
 	perror("fell off end");
 }
+
+set_parse_state_word(curr)
+struct command *curr;
+{
+	curr->state = STATE_WORD;
+}
+
 

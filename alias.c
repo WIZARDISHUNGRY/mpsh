@@ -138,7 +138,7 @@ int which;
 				puts("usage: alias            # show aliases");
 				puts("       alias -s         # show aliases");
 				puts("       alias -q         # show aliases, quoted");
-				puts("       alias -d name    # delete [name])");
+				puts("       alias -d name    # delete [name]");
 				puts("       alias -c         # clear all aliases");
 				puts("       alias name=value # set command alias [name] to [value]");
 				return(1);

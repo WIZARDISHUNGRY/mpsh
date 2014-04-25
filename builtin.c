@@ -61,6 +61,8 @@ builtin.c:
 
 
 #include "mpsh.h"
+#include "env.h"
+
 
 struct builtins {
 	char	*name;
@@ -77,6 +79,8 @@ int builtin_source();
 int builtin_set();
 int builtin_exit();
 int builtin_alias();
+int builtin_macro();
+int builtin_show_path();
 
 struct builtins builtin_fns[] = {
 	"fg",		builtin_fg,
@@ -84,11 +88,13 @@ struct builtins builtin_fns[] = {
 	".",		builtin_source,
 	"exit",		builtin_exit,
 	"alias",	builtin_alias,
+	"macro",	builtin_macro,
 	"history",	builtin_hist,
 	"cd",		builtin_cd,
 	"setenv",	builtin_setenv,
 	"jobs",		builtin_jobs,
 	"{",		builtin_set,
+	"show-path",builtin_show_path,
 	NULL,		NULL
 } ;
 
@@ -119,13 +125,6 @@ int which;
 	else
 		arg = NULL;
 
-	if(!arg) {
-		/*
-		report_error("Missing setenv option",NULL,0,0);
-		*/
-		display_env(ENV_PUBLIC,0);
-		return(1);
-	}
 
 	/*
 
@@ -149,8 +148,9 @@ int which;
 	*/
 
 	if(which == PARENT) {
+		if(!arg) return(0);
 		if(arg[0] != '-') {
-			set_env(command);
+			set_env(arg);
 			return(1);
 		}
 		if(strcmp(arg,"-d") == 0) {
@@ -160,49 +160,57 @@ int which;
 				report_error("Missing setenv -d argument",NULL,0,0);
 			return(1);
 		} 
+		if(arg[0] == '-' && arg[1] == 'c') {
+			clear_env(arg);
+			return(1);
+		}
 		return(0);
 	} else {
+		if(!arg) {
+			display_env(ENV_FLAG_INHERIT,0);
+			return(1);
+		}
 		if(arg[0] != '-') {
 			return(0);
 		}
 
 		if(strcmp(arg,"-s") == 0) {
-			display_env(ENV_PUBLIC,0);
+			display_env(ENV_FLAG_INHERIT,0);
 			return(1);
 		}
 
 		if(strcmp(arg,"-sa") == 0) {
-			display_env(ENV_ALIAS,0);
+			display_env(ENV_FLAG_ALIAS,0);
 			return(1);
 		}
 
 		if(strcmp(arg,"-si") == 0) {
-			display_env(ENV_INTERNAL,0);
+			display_env(ENV_FLAG_SETTING,0);
 			return(1);
 		}
 
 		if(strcmp(arg,"-sh") == 0) {
-			display_env(ENV_HANDLER,0);
+			display_env(ENV_FLAG_HANDLER,0);
 			return(1);
 		}
 
 		if(strcmp(arg,"-q") == 0) {
-			display_env(ENV_PUBLIC,1);
+			display_env(ENV_FLAG_INHERIT,1);
 			return(1);
 		}
 
 		if(strcmp(arg,"-qa") == 0) {
-			display_env(ENV_ALIAS,1);
+			display_env(ENV_FLAG_EXEC,1);
 			return(1);
 		}
 
 		if(strcmp(arg,"-qi") == 0) {
-			display_env(ENV_INTERNAL,1);
+			display_env(ENV_FLAG_SETTING,1);
 			return(1);
 		}
 
 		if(strcmp(arg,"-qh") == 0) {
-			display_env(ENV_HANDLER,1);
+			display_env(ENV_FLAG_HANDLER,1);
 			return(1);
 		}
 
@@ -211,17 +219,11 @@ int which;
 		puts("       setenv name=val # set env variable [name] to [val]");
 		puts("       setenv -s[aih]  # show var, alias, internal, handlers");
 		puts("       setenv -q[aih]  # show quoted");
+		puts("       setenv -c[ah]   # clear all variables");
+		puts("       setenv -ci      # reset internal settings to defaults");
 		puts("       setenv -d name  # delete [name] variable");
 		return(1);
 		}
-
-#ifdef OBSOLETE
-		/* This is changing to "clear" soon. */
-		if(strcmp(arg,"-c") == 0) {
-			clear_env();
-			return(1);
-		}
-#endif
 
 		report_error("Unknown setenv option",arg,0,0);
 		return(1);
@@ -234,15 +236,20 @@ int which;
 {
 	char *arg;
 	char *arg2;
+	char *arg3;
 	int job;
 
-	arg = arg2 = NULL;
+	arg = arg2 = arg3 = NULL;
 
 	if(command->words->next) {
 		arg = command->words->next->word;
-		if(command->words->next->next) 
+		if(command->words->next->next) {
 			arg2 = command->words->next->next->word;
-		else
+			if(command->words->next->next->next) 
+				arg3 = command->words->next->next->next->word;
+			else
+				arg3 = NULL;
+		} else
 			arg2 = NULL;
 	} else
 		arg = NULL;
@@ -257,15 +264,30 @@ int which;
 		}
 	}
 
+	if(arg && strcmp(arg,"-n") == 0) {
+		if(arg2 && arg3) {
+			job = pid_to_job(arg2);
+			if(job == -1)
+				report_error("Can't find job",arg2,0,0);
+			else
+				name_job(job,arg3);
+			return(1);
+		} else {
+			report_error("Missing jobs -n argument",NULL,0,0);
+			return(1);
+		}
+	}
+
 	if(which == PARENT) return(0);
 
 	if(arg && strcmp(arg,"-h") == 0) {
-		puts("usage: jobs            # Display current jobs");
-		puts("       jobs %job       # Display full details for one job");
-		puts("       jobs -s [%job]  # Display (specific) jobs");
-		puts("       jobs -l [%job]  # Display (specific) jobs, long format");
-		puts("       jobs fmt [%job] # Display (specific) jobs, [fmt] format");
-		puts("       jobs -d %job    # Delete one job");
+		puts("usage: jobs              # Display current jobs");
+		puts("       jobs %job         # Display full details for one job");
+		puts("       jobs -s [%job]    # Display (specific) jobs");
+		puts("       jobs -l [%job]    # Display (specific) jobs, long format");
+		puts("       jobs fmt [%job]   # Display (specific) jobs, [fmt] format");
+		puts("       jobs -d %job      # Delete one job");
+		puts("       jobs -n %job name # Name job");
 		return(1);
 	}
 
@@ -407,11 +429,11 @@ puts("usage: . script [args] # Run a script without forking a child process");
 	for(w=command->words->next->next; w; w=w->next) {
 		i++;
 		sprintf(buff,"%d=%s",i,w->word);
-		set_env_str(buff);
+		set_env(buff);
 	}
 
 	sprintf(buff,"#=%d",i);
-	set_env_str(buff);
+	set_env(buff);
 
 	run_script(script,0);
 	return(1);
